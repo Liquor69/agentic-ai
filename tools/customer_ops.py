@@ -379,6 +379,28 @@ def set_custom_account(data: dict) -> str:
     return status
 
 
+def _account_snapshot(acct: AccountState) -> dict:
+    """
+    Compact, JSON-safe snapshot of account state at evaluation time.
+    Included in every action tool's debug dict so the trace shows exactly what
+    the policy checks saw — not just what they returned.
+    """
+    return {
+        "account_id":             acct.account_id,
+        "plan":                   acct.plan,
+        "status":                 acct.status,
+        "billing_cycle":          acct.billing_cycle,
+        "days_since_payment":     (date.today() - acct.last_payment_date).days,
+        "refund_history_present": acct.refund_history_present,
+        "pending_action":         acct.pending_action,
+        "is_active":              acct.is_active,
+        "is_paused":              acct.is_paused,
+        "auto_renewal":           acct.auto_renewal,
+        "plan_price":             acct.plan_price,
+        "subscription_valid_until": acct.subscription_valid_until.isoformat(),
+    }
+
+
 # ─── Plan price table ─────────────────────────────────────────────────────────
 
 _PLAN_PRICES: dict[str, dict[str, float]] = {
@@ -734,6 +756,7 @@ class RefundOutput(BaseModel):
     confirmation_payload: ConfirmationPayload | None = None
     escalation_required: bool = False
     error: ToolError | None = None
+    debug: dict[str, Any] | None = None      # policy check trace
 
 
 @register_tool
@@ -756,28 +779,57 @@ def process_refund(input: RefundInput) -> RefundOutput:
     """
     acct = _get_account(input.account_id)
     if isinstance(acct, ToolError):
-        return RefundOutput(success=False, error=acct)
+        return RefundOutput(success=False, error=acct, debug={
+            "account_snapshot": None,
+            "policy_checks": [{"check": "account_lookup", "passed": False,
+                                "error_code": acct.code, "message": acct.message}],
+        })
+
+    snap = _account_snapshot(acct)
+    checks: list[dict] = []
+
+    def _chk(name: str, err: ToolError | None, **details) -> ToolError | None:
+        entry: dict[str, Any] = {"check": name, "passed": err is None}
+        if details:
+            entry["details"] = details
+        if err is not None:
+            entry["error_code"] = err.code
+            entry["message"] = err.message
+        checks.append(entry)
+        return err
+
+    def _dbg(**computed) -> dict:
+        d: dict[str, Any] = {"account_snapshot": snap, "policy_checks": checks}
+        if computed:
+            d["computed"] = computed
+        return d
 
     # Policy checks — order matches CUSTOMER_OPS_POLICY.md
-    if err := _block_if_pending(acct):
-        return RefundOutput(success=False, error=err)
+    if err := _chk("pending_operation", _block_if_pending(acct),
+                   pending_action=acct.pending_action):
+        return RefundOutput(success=False, error=err, debug=_dbg())
 
     # A cancelled-but-still-active subscription is refund eligible; only fully-expired/refunded is not.
+    days_elapsed = (date.today() - acct.last_payment_date).days
     if not acct.is_active:
-        if (date.today() - acct.last_payment_date).days > REFUND_WINDOW_DAYS:
-            return RefundOutput(
-                success=False,
-                error=ToolError(
-                    code="NO_ACTIVE_SUBSCRIPTION",
-                    message="This account does not have an active subscription eligible for refund.",
-                ),
+        if days_elapsed > REFUND_WINDOW_DAYS:
+            err_no_sub = ToolError(
+                code="NO_ACTIVE_SUBSCRIPTION",
+                message="This account does not have an active subscription eligible for refund.",
             )
+            _chk("active_subscription", err_no_sub,
+                 status=acct.status, days_elapsed=days_elapsed, window_days=REFUND_WINDOW_DAYS)
+            return RefundOutput(success=False, error=err_no_sub, debug=_dbg())
+    else:
+        _chk("active_subscription", None, status=acct.status)
 
-    if err := _check_refund_window(acct):
-        return RefundOutput(success=False, error=err)
+    if err := _chk("refund_window", _check_refund_window(acct),
+                   days_elapsed=days_elapsed, window_days=REFUND_WINDOW_DAYS):
+        return RefundOutput(success=False, error=err, debug=_dbg())
 
-    if err := _check_refund_lifetime(acct):
-        return RefundOutput(success=False, escalation_required=True, error=err)
+    if err := _chk("refund_lifetime", _check_refund_lifetime(acct),
+                   refund_history_present=acct.refund_history_present):
+        return RefundOutput(success=False, escalation_required=True, error=err, debug=_dbg())
 
     # Refund covers plan price only — extra fees are non-refundable.
     refund_amount = acct.plan_price
@@ -813,6 +865,7 @@ def process_refund(input: RefundInput) -> RefundOutput:
             guest_pass_status="will_be_invalidated" if has_guest else None,
             confirmation_required=True,
             confirmation_payload=payload,
+            debug=_dbg(refund_amount=refund_amount, method=refund_method, has_guest_pass=has_guest),
         )
 
     # ── CONFIRMED — execute ──────────────────────────────────────────────────
@@ -830,6 +883,8 @@ def process_refund(input: RefundInput) -> RefundOutput:
         processing_timeline="3–10 business days",
         subscription_status="invalidated",
         guest_pass_status="invalidated" if has_guest else None,
+        debug=_dbg(refund_amount=refund_amount, method=refund_method,
+                   has_guest_pass=has_guest, state_written="refunded"),
     )
 
 
@@ -851,6 +906,7 @@ class CancelOutput(BaseModel):
     confirmation_required: bool = False
     confirmation_payload: ConfirmationPayload | None = None
     error: ToolError | None = None
+    debug: dict[str, Any] | None = None      # policy check trace
 
 
 @register_tool
@@ -872,23 +928,50 @@ def cancel_subscription(input: CancelInput) -> CancelOutput:
     """
     acct = _get_account(input.account_id)
     if isinstance(acct, ToolError):
-        return CancelOutput(success=False, error=acct)
+        return CancelOutput(success=False, error=acct, debug={
+            "account_snapshot": None,
+            "policy_checks": [{"check": "account_lookup", "passed": False,
+                                "error_code": acct.code, "message": acct.message}],
+        })
 
-    if err := _block_if_pending(acct):
-        return CancelOutput(success=False, error=err)
+    snap = _account_snapshot(acct)
+    checks: list[dict] = []
 
-    if err := _require_active_subscription(acct):
-        return CancelOutput(success=False, error=err)
+    def _chk(name: str, err: ToolError | None, **details) -> ToolError | None:
+        entry: dict[str, Any] = {"check": name, "passed": err is None}
+        if details:
+            entry["details"] = details
+        if err is not None:
+            entry["error_code"] = err.code
+            entry["message"] = err.message
+        checks.append(entry)
+        return err
+
+    def _dbg(**computed) -> dict:
+        d: dict[str, Any] = {"account_snapshot": snap, "policy_checks": checks}
+        if computed:
+            d["computed"] = computed
+        return d
+
+    if err := _chk("pending_operation", _block_if_pending(acct),
+                   pending_action=acct.pending_action):
+        return CancelOutput(success=False, error=err, debug=_dbg())
+
+    if err := _chk("active_subscription", _require_active_subscription(acct),
+                   status=acct.status, is_active=acct.is_active):
+        return CancelOutput(success=False, error=err, debug=_dbg())
 
     if not acct.auto_renewal:
-        return CancelOutput(
-            success=False,
-            error=ToolError(
-                code="ALREADY_CANCELLED",
-                message="Auto-renewal is already disabled for this account.",
-                details={"subscription_valid_until": acct.subscription_valid_until.isoformat()},
-            ),
+        err_already = ToolError(
+            code="ALREADY_CANCELLED",
+            message="Auto-renewal is already disabled for this account.",
+            details={"subscription_valid_until": acct.subscription_valid_until.isoformat()},
         )
+        _chk("auto_renewal_enabled", err_already,
+             auto_renewal=acct.auto_renewal, status=acct.status)
+        return CancelOutput(success=False, error=err_already, debug=_dbg())
+    else:
+        _chk("auto_renewal_enabled", None, auto_renewal=acct.auto_renewal)
 
     valid_until = acct.subscription_valid_until.isoformat()
     has_guest = acct.plan == "black_card"
@@ -914,6 +997,7 @@ def cancel_subscription(input: CancelInput) -> CancelOutput:
             guest_pass_valid_until=valid_until if has_guest else None,
             confirmation_required=True,
             confirmation_payload=payload,
+            debug=_dbg(valid_until=valid_until, has_guest_pass=has_guest),
         )
 
     # ── CONFIRMED — execute ──────────────────────────────────────────────────
@@ -924,6 +1008,8 @@ def cancel_subscription(input: CancelInput) -> CancelOutput:
         auto_renewal_after=False,
         subscription_valid_until=valid_until,
         guest_pass_valid_until=valid_until if has_guest else None,
+        debug=_dbg(valid_until=valid_until, has_guest_pass=has_guest,
+                   state_written="cancelled"),
     )
 
 
@@ -976,6 +1062,7 @@ class PauseOutput(BaseModel):
     confirmation_required: bool = False
     confirmation_payload: ConfirmationPayload | None = None
     error: ToolError | None = None
+    debug: dict[str, Any] | None = None      # policy check trace
 
 
 @register_tool
@@ -1002,33 +1089,67 @@ def pause_subscription(input: PauseInput) -> PauseOutput:
     """
     acct = _get_account(input.account_id)
     if isinstance(acct, ToolError):
-        return PauseOutput(success=False, error=acct)
+        return PauseOutput(success=False, error=acct, debug={
+            "account_snapshot": None,
+            "policy_checks": [{"check": "account_lookup", "passed": False,
+                                "error_code": acct.code, "message": acct.message}],
+        })
 
-    if err := _block_if_pending(acct):
-        return PauseOutput(success=False, error=err)
+    snap = _account_snapshot(acct)
+    checks: list[dict] = []
+    notice_days = (input.start_date - date.today()).days
 
-    if err := _require_active_subscription(acct):
-        return PauseOutput(success=False, error=err)
+    def _chk(name: str, err: ToolError | None, **details) -> ToolError | None:
+        entry: dict[str, Any] = {"check": name, "passed": err is None}
+        if details:
+            entry["details"] = details
+        if err is not None:
+            entry["error_code"] = err.code
+            entry["message"] = err.message
+        checks.append(entry)
+        return err
+
+    def _dbg(**computed) -> dict:
+        d: dict[str, Any] = {"account_snapshot": snap, "policy_checks": checks}
+        if computed:
+            d["computed"] = computed
+        return d
+
+    if err := _chk("pending_operation", _block_if_pending(acct),
+                   pending_action=acct.pending_action):
+        return PauseOutput(success=False, error=err, debug=_dbg())
+
+    if err := _chk("active_subscription", _require_active_subscription(acct),
+                   status=acct.status, is_active=acct.is_active):
+        return PauseOutput(success=False, error=err, debug=_dbg())
 
     if acct.is_paused:
-        return PauseOutput(
-            success=False,
-            error=ToolError(
-                code="ALREADY_PAUSED",
-                message="This account already has an active pause.",
-            ),
-        )
+        err_paused = ToolError(code="ALREADY_PAUSED",
+                               message="This account already has an active pause.")
+        _chk("not_already_paused", err_paused, is_paused=acct.is_paused)
+        return PauseOutput(success=False, error=err_paused, debug=_dbg())
+    else:
+        _chk("not_already_paused", None, is_paused=acct.is_paused)
 
-    if err := _check_pause_notice(input.start_date):
-        return PauseOutput(success=False, error=err)
+    if err := _chk("pause_notice", _check_pause_notice(input.start_date),
+                   start_date=input.start_date.isoformat(),
+                   notice_days=notice_days,
+                   required_days=PAUSE_MIN_NOTICE_DAYS):
+        return PauseOutput(success=False, error=err, debug=_dbg())
 
-    if err := _check_pause_duration(input.duration_days, input.has_documentation):
+    if err := _chk("pause_duration", _check_pause_duration(input.duration_days, input.has_documentation),
+                   duration_days=input.duration_days,
+                   has_documentation=input.has_documentation,
+                   fee_tier_max=PAUSE_FEE_MAX_DAYS,
+                   escalate_threshold=PAUSE_ESCALATE_DAYS,
+                   deny_threshold=PAUSE_DENY_DAYS):
         return PauseOutput(
             success=False,
             escalation_required=err.code in (
                 "PAUSE_ESCALATION_REQUIRED", "PAUSE_DOCUMENTATION_ESCALATION"
             ),
             error=err,
+            debug=_dbg(),
         )
 
     # end_date guaranteed by model_validator (start_date + duration_days)
@@ -1076,6 +1197,8 @@ def pause_subscription(input: PauseInput) -> PauseOutput:
             guest_pass_impact=guest_note,
             confirmation_required=True,
             confirmation_payload=payload,
+            debug=_dbg(fee=fee, periods=periods, new_renewal_date=new_renewal.isoformat(),
+                       has_guest_pass=has_guest),
         )
 
     # ── CONFIRMED — execute ──────────────────────────────────────────────────
@@ -1090,6 +1213,8 @@ def pause_subscription(input: PauseInput) -> PauseOutput:
         duration_days=input.duration_days,
         new_renewal_date=new_renewal.isoformat(),
         guest_pass_impact=guest_note,
+        debug=_dbg(fee=fee, periods=periods, new_renewal_date=new_renewal.isoformat(),
+                   has_guest_pass=has_guest, state_written="paused"),
     )
 
 
@@ -1116,6 +1241,7 @@ class PlanChangeOutput(BaseModel):
     confirmation_required: bool = False
     confirmation_payload: ConfirmationPayload | None = None
     error: ToolError | None = None
+    debug: dict[str, Any] | None = None      # policy check trace
 
 
 @register_tool
@@ -1141,40 +1267,65 @@ def change_plan(input: PlanChangeInput) -> PlanChangeOutput:
     """
     acct = _get_account(input.account_id)
     if isinstance(acct, ToolError):
-        return PlanChangeOutput(success=False, error=acct)
+        return PlanChangeOutput(success=False, error=acct, debug={
+            "account_snapshot": None,
+            "policy_checks": [{"check": "account_lookup", "passed": False,
+                                "error_code": acct.code, "message": acct.message}],
+        })
 
-    if err := _block_if_pending(acct):
-        return PlanChangeOutput(success=False, error=err)
+    snap = _account_snapshot(acct)
+    checks: list[dict] = []
 
-    if err := _require_active_subscription(acct):
-        return PlanChangeOutput(success=False, error=err)
+    def _chk(name: str, err: ToolError | None, **details) -> ToolError | None:
+        entry: dict[str, Any] = {"check": name, "passed": err is None}
+        if details:
+            entry["details"] = details
+        if err is not None:
+            entry["error_code"] = err.code
+            entry["message"] = err.message
+        checks.append(entry)
+        return err
 
-    if err := _block_if_paused(acct):
-        return PlanChangeOutput(success=False, error=err)
+    def _dbg(**computed) -> dict:
+        d: dict[str, Any] = {"account_snapshot": snap, "policy_checks": checks}
+        if computed:
+            d["computed"] = computed
+        return d
+
+    if err := _chk("pending_operation", _block_if_pending(acct),
+                   pending_action=acct.pending_action):
+        return PlanChangeOutput(success=False, error=err, debug=_dbg())
+
+    if err := _chk("active_subscription", _require_active_subscription(acct),
+                   status=acct.status, is_active=acct.is_active):
+        return PlanChangeOutput(success=False, error=err, debug=_dbg())
+
+    if err := _chk("not_paused", _block_if_paused(acct),
+                   is_paused=acct.is_paused):
+        return PlanChangeOutput(success=False, error=err, debug=_dbg())
 
     # Validate inputs
     if input.new_plan not in _PLAN_PRICES:
-        return PlanChangeOutput(
-            success=False,
-            error=ToolError(
-                code="INVALID_PLAN",
-                message=f"Unknown plan '{input.new_plan}'. Valid: pass, black_card.",
-            ),
-        )
+        err_plan = ToolError(code="INVALID_PLAN",
+                             message=f"Unknown plan '{input.new_plan}'. Valid: pass, black_card.")
+        _chk("valid_plan", err_plan, requested_plan=input.new_plan)
+        return PlanChangeOutput(success=False, error=err_plan, debug=_dbg())
     if input.new_billing_type not in ("monthly", "annual"):
-        return PlanChangeOutput(
-            success=False,
-            error=ToolError(
-                code="INVALID_BILLING_TYPE",
-                message="billing_type must be 'monthly' or 'annual'.",
-            ),
-        )
+        err_billing = ToolError(code="INVALID_BILLING_TYPE",
+                                message="billing_type must be 'monthly' or 'annual'.")
+        _chk("valid_billing_type", err_billing, requested_billing_type=input.new_billing_type)
+        return PlanChangeOutput(success=False, error=err_billing, debug=_dbg())
 
     current_value = _PLAN_PRICES[acct.plan][acct.billing_cycle]
     new_value = _PLAN_PRICES[input.new_plan][input.new_billing_type]
     is_upgrade = new_value > current_value
     from_label = f"{acct.plan}/{acct.billing_cycle}"
     to_label   = f"{input.new_plan}/{input.new_billing_type}"
+
+    _chk("plan_inputs_valid", None,
+         from_plan=from_label, to_plan=to_label,
+         current_value=current_value, new_value=new_value,
+         change_type="upgrade" if is_upgrade else "downgrade")
 
     if is_upgrade:
         charge = _upgrade_delta_charge(acct, input.new_billing_type)
@@ -1230,6 +1381,8 @@ def change_plan(input: PlanChangeInput) -> PlanChangeOutput:
             guest_pass_impact=guest_note,
             confirmation_required=True,
             confirmation_payload=payload,
+            debug=_dbg(change_type=change_type, charge=charge,
+                       effective_date=effective_date, has_guest_pass=(acct.plan == "black_card")),
         )
 
     # ── CONFIRMED — execute ──────────────────────────────────────────────────
@@ -1247,4 +1400,7 @@ def change_plan(input: PlanChangeInput) -> PlanChangeOutput:
         immediate_charge=charge if is_upgrade else None,
         effective_date=effective_date,
         guest_pass_impact=guest_note,
+        debug=_dbg(change_type=change_type, charge=charge,
+                   effective_date=effective_date,
+                   state_written=f"{input.new_plan}/{input.new_billing_type}"),
     )
