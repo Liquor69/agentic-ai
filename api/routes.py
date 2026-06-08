@@ -18,7 +18,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
-from api.schemas import CustomAccountRequest, LogEntryOut, LogsResponse, MetricsResponse, RunRequest, RunResponse, ToolInfo
+from api.schemas import CustomAccountRequest, HealthResponse, LogEntryOut, LogsResponse, MetricsResponse, RunRequest, RunResponse, ToolInfo
 from config import settings
 from db import crud
 from tools.registry import get_tool_names_and_descriptions
@@ -60,6 +60,7 @@ async def run(request: RunRequest) -> RunResponse:
             confirmed=request.confirmed,
             account_id=request.account_id,
             form_data=request.form_data,
+            dry_run=request.dry_run,
         )
     except Exception as exc:
         logging.getLogger(__name__).exception("Unhandled exception in /run route")
@@ -147,6 +148,35 @@ async def dashboard() -> dict:
         for log in recent_logs
     ]
     return {**metrics, "recent_runs": recent}
+
+
+# ─── GET /health ─────────────────────────────────────────────────────────────
+
+@router.get("/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
+    """
+    Liveness + readiness probe.
+
+    Returns 200 when the API is running and the database is reachable.
+    Returns 200 with status='degraded' when the DB is unavailable (so load
+    balancers can distinguish liveness from readiness if needed).
+    """
+    from tools.registry import list_tools
+
+    db_status = "ok"
+    try:
+        from db import crud
+        crud.get_logs(limit=1)
+    except Exception as exc:
+        db_status = f"error: {exc}"
+
+    return HealthResponse(
+        status="ok" if db_status == "ok" else "degraded",
+        db=db_status,
+        domain=settings.domain_pack,
+        tools_registered=len(list_tools()),
+        version="1.0.0",
+    )
 
 
 # ─── GET /accounts ────────────────────────────────────────────────────────────

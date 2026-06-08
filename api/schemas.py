@@ -54,6 +54,15 @@ class RunRequest(BaseModel):
             "Injected into all tool calls — never ask the member for this."
         ),
     )
+    dry_run: bool = Field(
+        default=False,
+        description=(
+            "When True, the full agent loop runs (classify, plan, safety checks) "
+            "but tool execution is simulated — no side effects. "
+            "halt_reason will be 'dry_run'. "
+            "Use for testing routing without modifying any account state."
+        ),
+    )
 
 
 class TraceStep(BaseModel):
@@ -90,6 +99,11 @@ class RunResponse(BaseModel):
             "Accumulated LLM token counts for the run: "
             "input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens."
         ),
+    )
+    # Action safety (Phase 4)
+    dry_run: bool = Field(
+        default=False,
+        description="True when the request was submitted with dry_run=True.",
     )
 
 
@@ -174,6 +188,16 @@ class MetricsResponse(BaseModel):
     latency_ms: LatencyStats
     tokens: TokenStats
     error_rate: float
+
+
+# ─── GET /health ─────────────────────────────────────────────────────────────
+
+class HealthResponse(BaseModel):
+    status: str = Field(description="'ok' or 'degraded'")
+    db: str     = Field(description="'ok' or error description")
+    domain: str = Field(description="Active domain pack name.")
+    tools_registered: int = Field(description="Number of tools currently registered.")
+    version: str
 
 
 # ─── POST /accounts/custom ────────────────────────────────────────────────────

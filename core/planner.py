@@ -66,6 +66,7 @@ class AgentState(TypedDict):
     account_id: str | None
     account_context: str | None    # human-readable summary from describe_account()
     form_data: dict | None         # form field values submitted alongside confirmed=True
+    dry_run: bool                  # True = simulate execution, no side effects
 
     # ── Interpretation ─────────────────────────────────────────────────────────
     classification: str | None     # e.g. "Subscription pause request — dates unspecified"
@@ -842,6 +843,27 @@ def execution_node(state: AgentState) -> dict:
             "justification": state.get("selection_justification") or "",
         }]
 
+    # ── Dry-run short-circuit ──────────────────────────────────────────────────
+    # Simulate execution without calling any tool.  Returns what *would* have run.
+    if state.get("dry_run"):
+        simulated = [
+            {"tool_name": t["tool_name"], "halt_reason": "dry_run", "simulated": True}
+            for t in selected_tools
+        ]
+        names = [t["tool_name"] for t in selected_tools]
+        return {
+            "tool_result":    {"dry_run": True, "would_execute": names},
+            "tool_results":   simulated,
+            "error":          None,
+            "halt_reason":    "dry_run",
+            "confirmation_payload": None,
+            "verified_changes": ["[Dry run] No changes applied — simulation mode."],
+            "trace": _trace(state, "execution", {
+                "dry_run":         True,
+                "simulated_tools": names,
+            }),
+        }
+
     tool_results: list[dict] = []
     aggregate_verified: list[str] = []
     halt_reason = "success"
@@ -1061,6 +1083,15 @@ def respond_node(state: AgentState) -> dict:
             "Your confirmation window has expired — no changes were made. "
             "Please resubmit your request to start again."
         )
+    elif halt_reason == "rate_limited":
+        error = state.get("error") or {}
+        msg   = error.get("message", "Rate limit reached. Please try again later.")
+        response = f"{msg} Contact support@fitness.com for assistance."
+    elif halt_reason == "dry_run":
+        results  = state.get("tool_results") or []
+        names    = [r["tool_name"] for r in results if r.get("tool_name")]
+        tool_str = ", ".join(names) if names else "the requested action"
+        response = f"[Dry run] No changes were made. Would have executed: {tool_str}."
     else:
         response = "Unable to process your request. Please try again."
 
@@ -1232,6 +1263,78 @@ def _route_selection(state: AgentState) -> str:
         return "log"
     if halt == "form_required":
         return "form"
+    # All successful selections pass through the safety gate before execution.
+    return "safety"
+
+
+# ─── Node: safety ────────────────────────────────────────────────────────────
+# Sits between selection and execution.  Demonstrates that the safety gate is
+# independently extensible — new checks are added here without touching any
+# other node.
+#
+# Current checks:
+#   1. Per-session rate limit for destructive action tools.
+#
+# When confirmed=True, interpretation_node routes directly to execution (bypassing
+# this node).  Rate limits are enforced at plan time, not confirmation time, which
+# is the correct UX — a user who was below the limit when they confirmed should
+# not be blocked mid-flow.
+
+def safety_node(state: AgentState) -> dict:
+    """
+    Safety gate: rate-limit check for destructive action tools.
+
+    Passes the state through unchanged when all checks clear.
+    Sets halt_reason="rate_limited" and returns to log/respond if a limit is hit.
+    """
+    from core.safety import RateLimitExceeded, check_rate_limit
+
+    selected_tools: list[dict] = list(state.get("selected_tools") or [])
+
+    for entry in selected_tools:
+        tool_name = entry.get("tool_name", "")
+        if tool_name not in _ACTION_TOOLS:
+            continue
+        try:
+            check_rate_limit(
+                session_id=state["session_id"],
+                tool_name=tool_name,
+                max_per_session=settings.rate_limit_per_session,
+            )
+        except RateLimitExceeded as exc:
+            return {
+                "halt_reason": "rate_limited",
+                "error": {
+                    "code": exc.code,
+                    "message": str(exc),
+                    "details": {
+                        "tool":            exc.tool_name,
+                        "count":           exc.count,
+                        "max_per_session": exc.max_per_session,
+                        "session_id":      state["session_id"],
+                    },
+                },
+                "trace": _trace(state, "safety", {
+                    "rate_limited_tool": tool_name,
+                    "halt":              "rate_limited",
+                }),
+            }
+
+    # All checks passed — return nothing (state is unchanged, only trace appended)
+    action_tools_checked = [
+        e["tool_name"] for e in selected_tools if e.get("tool_name") in _ACTION_TOOLS
+    ]
+    return {
+        "trace": _trace(state, "safety", {
+            "passed":         True,
+            "tools_checked":  action_tools_checked,
+        }),
+    }
+
+
+def _route_safety(state: AgentState) -> str:
+    if state.get("halt_reason") == "rate_limited":
+        return "log"
     return "execution"
 
 
@@ -1247,6 +1350,7 @@ def build_graph():
 
     graph.add_node("interpretation", interpretation_node)
     graph.add_node("selection",      selection_node)
+    graph.add_node("safety",         safety_node)
     graph.add_node("form",           form_node)
     graph.add_node("execution",      execution_node)
     graph.add_node("log",            log_node)
@@ -1256,11 +1360,17 @@ def build_graph():
 
     graph.add_conditional_edges(
         "interpretation", _route_interpretation,
+        # confirmed=True bypasses safety (rate limit is checked at plan time)
         {"selection": "selection", "execution": "execution", "respond": "respond"},
     )
     graph.add_conditional_edges(
         "selection", _route_selection,
-        {"execution": "execution", "form": "form", "log": "log"},
+        # success path now routes through the safety gate before execution
+        {"safety": "safety", "form": "form", "log": "log"},
+    )
+    graph.add_conditional_edges(
+        "safety", _route_safety,
+        {"execution": "execution", "log": "log"},
     )
 
     graph.add_edge("form",      "log")

@@ -167,9 +167,10 @@ class TestRouteSelection:
         from core.planner import _route_selection
         assert _route_selection({**_BASE, "halt_reason": "form_required"}) == "form"
 
-    def test_no_halt_routes_to_execution(self):
+    def test_no_halt_routes_to_safety(self):
+        """Selection with no halt condition routes to safety_node (added Phase 4)."""
         from core.planner import _route_selection
-        assert _route_selection({**_BASE, "halt_reason": None}) == "execution"
+        assert _route_selection({**_BASE, "halt_reason": None}) == "safety"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

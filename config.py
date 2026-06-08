@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 300          # Anthropic prompt cache TTL (5 min)
     confirmation_ttl_seconds: int = 600   # pending-confirmation TTL (10 min)
 
+    # Action safety
+    max_input_length: int = 2000       # max characters per request (validate_input)
+    rate_limit_per_session: int = 20   # max successful destructive calls per session
+
     # External integrations
     n8n_webhook_base_url: str = ""
     external_api_base_url: str = ""    # billing / external data backend (tools/external_api.py)

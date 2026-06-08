@@ -255,6 +255,36 @@ def get_metrics(
         return _compute(_db)
 
 
+def count_successful_tool_calls(
+    session_id: str,
+    tool_name: str,
+    db: Session | None = None,
+) -> int:
+    """
+    Count how many times *tool_name* has been executed successfully in *session_id*.
+    Used by core/safety.check_rate_limit() to enforce per-session action limits.
+
+    Counts rows where selected_tool == tool_name AND halt_reason == "success".
+    Multi-tool runs where a destructive action is not the primary (first) tool are
+    conservatively under-counted — acceptable for a rate-limit guard.
+    """
+    def _count(session: Session) -> int:
+        return (
+            session.query(AgentLog)
+            .filter(
+                AgentLog.session_id == session_id,
+                AgentLog.selected_tool == tool_name,
+                AgentLog.halt_reason == "success",
+            )
+            .count()
+        )
+
+    if db is not None:
+        return _count(db)
+    with get_db() as _db:
+        return _count(_db)
+
+
 def get_log_by_id(log_id: int, db: Session | None = None) -> AgentLog | None:
     def _query(session: Session) -> AgentLog | None:
         return session.query(AgentLog).filter(AgentLog.id == log_id).first()

@@ -18,8 +18,9 @@ import uuid
 from typing import Any
 
 from api.schemas import RunResponse, TraceStep
-from config import get_token_usage, reset_token_counter
+from config import get_token_usage, reset_token_counter, settings
 from core.planner import AgentState, build_graph
+from core.safety import InputRejected, validate_input
 from db import crud
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ def run_agent(
     confirmed: bool | None = None,
     account_id: str | None = None,
     form_data: dict | None = None,
+    dry_run: bool = False,
 ) -> RunResponse:
     """
     Run the agent loop for one request.
@@ -47,12 +49,34 @@ def run_agent(
     form_data              : Form field values submitted when confirmed=True for a
                              form-type pending action. Merged into tool_input_data by
                              interpretation_node before routing to execution.
+    dry_run                : When True, the full loop runs but tool execution is
+                             simulated — no side effects. halt_reason = "dry_run".
     """
     if not session_id:
         session_id = str(uuid.uuid4())
 
+    # ── Pre-graph input validation ─────────────────────────────────────────────
+    # Only validate new requests (confirmed is None).
+    # Confirmation responses (confirmed=True/False) are routing signals, not user text —
+    # their message field is often empty and that is expected.
     t0 = time.perf_counter()
     reset_token_counter()
+    if confirmed is None:
+        try:
+            message = validate_input(message, max_length=settings.max_input_length)
+        except InputRejected as exc:
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            return RunResponse(
+                result=exc.message,
+                trace=[TraceStep(phase="safety", data={"code": exc.code, "message": exc.message})],
+                session_id=session_id,
+                iterations_used=0,
+                halt_reason="input_rejected",
+                error={"code": exc.code, "message": exc.message},
+                latency_ms=latency_ms,
+                token_usage={},
+                dry_run=dry_run,
+            )
 
     graph = build_graph()
 
@@ -65,6 +89,7 @@ def run_agent(
         "account_id": account_id,
         "account_context": None,
         "form_data": form_data,
+        "dry_run": dry_run,
         # ── Interpretation ─────────────────────────────────────────────────────
         "classification": None,
         # ── Selection ──────────────────────────────────────────────────────────
@@ -108,6 +133,7 @@ def run_agent(
             error={"code": "INTERNAL_ERROR", "message": str(exc), "traceback": tb},
             latency_ms=latency_ms,
             token_usage=get_token_usage(),
+            dry_run=dry_run,
         )
 
     latency_ms = int((time.perf_counter() - t0) * 1000)
@@ -135,6 +161,7 @@ def run_agent(
         form_spec=final.get("form_spec"),
         latency_ms=latency_ms,
         token_usage=token_usage,
+        dry_run=dry_run,
     )
 
 
