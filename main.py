@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from api.routes import router
+from config import settings
 from core.logger import setup_logging
 from db.models import create_tables
 from tools.registry import discover_tools
@@ -27,7 +28,7 @@ from tools.registry import discover_tools
 async def lifespan(app: FastAPI):
     setup_logging()
     create_tables()
-    discover_tools()
+    discover_tools(domain=settings.domain_pack)
     yield
 
 

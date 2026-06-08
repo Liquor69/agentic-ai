@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite:///./agent.db"
 
+    # Domain pack — selects which tool set and routing rules are active.
+    # Corresponds to a module under domains/ (e.g. "customer_ops" → domains/customer_ops.py).
+    domain_pack: str = "customer_ops"
+
     # Agent behaviour
     max_iterations: int = 5
     session_ttl_seconds: int = 3600

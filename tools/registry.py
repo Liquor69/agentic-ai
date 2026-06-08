@@ -190,17 +190,60 @@ def execute_tool(name: str, input_data: dict[str, Any]) -> Any:
 _SKIP_MODULES = {"registry", "__init__"}
 
 
-def discover_tools(tools_dir: Path | None = None) -> None:
+def discover_tools(
+    domain: str | None = None,
+    tools_dir: Path | None = None,
+) -> None:
     """
-    Import every Python module in tools/ except registry.py and __init__.py.
-    Modules that use @register_tool self-register on import.
+    Register all tools for the active domain.
 
-    Called once during app startup (main.py lifespan).
-    After this call the planner has a complete tool list with no direct imports.
+    When *domain* is provided (the normal production path), only the modules
+    listed in that domain pack's ``tools_modules`` are imported.  This keeps
+    unrelated tools out of the planner's tool list and avoids importing code
+    that may depend on domain-specific config that isn't present.
 
-    Failed imports are logged and skipped — a broken tool file does not
-    prevent the rest of the registry from loading.
+    When *domain* is ``None`` (backward-compatible fallback), every Python
+    module in ``tools/`` except ``registry.py`` and ``__init__.py`` is
+    imported — the original behaviour, used by the test fixture and any caller
+    that hasn't been updated to pass a domain.
+
+    Modules decorated with ``@register_tool`` self-register on import.
+    Failed imports are logged and skipped so one broken file doesn't prevent
+    the rest of the registry from loading.
+
+    Called once during app startup (``main.py`` lifespan).
     """
+    if domain is not None:
+        _discover_by_domain(domain)
+    else:
+        _discover_all(tools_dir)
+
+    logger.info(
+        "Tool discovery complete (domain=%s). %d tool(s) registered: %s",
+        domain or "all",
+        len(_REGISTRY),
+        list(_REGISTRY.keys()),
+    )
+
+
+def _discover_by_domain(domain: str) -> None:
+    """Import only the tool modules declared in *domain*'s domain pack."""
+    from domains import load_domain_pack  # imported here to avoid circular import at registry level
+
+    pack = load_domain_pack(domain)
+    for module_path in pack["tools_modules"]:
+        try:
+            importlib.import_module(module_path)
+            logger.debug("Discovered tool module (domain=%s): %s", domain, module_path)
+        except Exception:
+            logger.exception(
+                "Failed to import tool module '%s' for domain '%s' — skipping",
+                module_path, domain,
+            )
+
+
+def _discover_all(tools_dir: Path | None = None) -> None:
+    """Import every module in tools/ (original behaviour, domain=None fallback)."""
     if tools_dir is None:
         tools_dir = Path(__file__).parent
 
@@ -213,9 +256,3 @@ def discover_tools(tools_dir: Path | None = None) -> None:
             logger.debug("Discovered tool module: %s", full_name)
         except Exception:
             logger.exception("Failed to import tool module '%s' — skipping", full_name)
-
-    logger.info(
-        "Tool discovery complete. %d tool(s) registered: %s",
-        len(_REGISTRY),
-        list(_REGISTRY.keys()),
-    )

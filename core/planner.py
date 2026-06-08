@@ -103,55 +103,53 @@ class AgentState(TypedDict):
 
 
 # ─── Prompt constants ─────────────────────────────────────────────────────────
+# Generic preamble and suffix are domain-agnostic.
+# The domain-specific tool routing rules are injected from the active domain pack.
 
-_CLASSIFICATION_SYSTEM = (
-    "Classify the member's request in one short phrase (5–12 words). "
-    "Be specific: name the action, plan/cycle if visible, and any key condition. "
-    "Examples: 'Full refund — monthly Pass, 5 days since purchase', "
-    "'Subscription pause request — dates unspecified', 'Billing history enquiry'. "
+_CLASSIFICATION_SYSTEM_TEMPLATE = (
+    "{context} "
+    "Classify the user's request in one short phrase (5–12 words). "
+    "Be specific: name the action and any key condition. "
     "Output the phrase only — no punctuation at the end, no explanation."
 )
 
-_SELECTION_SYSTEM_BASE = """\
-You are an operations planning agent. Select the correct tool(s) based on the member's intent.
+_SELECTION_SYSTEM_PREAMBLE = """\
+You are an operations planning agent. Select the correct tool(s) based on the user's intent.
 
 CRITICAL RULES:
 1. Select based on INTENT only. Missing parameters are NOT a reason to use "clarify".
-   The system will automatically prompt the member for any missing parameters via a form.
+   The system will automatically prompt the user for any missing parameters via a form.
 2. If the request covers multiple distinct intents, include ALL required tools in the tools array.
-3. Only use "clarify" (as the sole entry) when the ENTIRE request is genuinely unclear.
+3. Only use "clarify" (as the sole entry) when the ENTIRE request is genuinely unclear.\
+"""
 
-Tool selection rules:
-- Member requests a refund or wants money back                        → process_refund
-- Member asks to cancel / not renew (permanent, no time limit)       → cancel_subscription
-- Member uses pause / freeze / suspend / hold (any or no duration)   → pause_subscription
-- Member asks to change plan or billing cycle                        → change_plan
-- Member asks about past charges or billing history                  → fetch_payment_history
-- Member asks factual question about gym (hours, pricing, plans)     → faq_lookup
-- Member asks about eligibility, policy rules, or "can I..."         → policy_query
-- Entire request is GENUINELY UNCLEAR (e.g. "fix my account", "help") → clarify (solo)
-
-Disambiguation rules:
-- "pause" / "freeze" / "hold" / "suspend" — even without a duration → pause_subscription
-  (the form collects start date and duration; do NOT ask the member yourself)
-- "cancel for a few months" / "stop it for a while" → pause_subscription, not cancel
-- "cancel and get money back" / "I changed my mind" → process_refund
-- "switch plans" / "downgrade" / "change to annual" → change_plan
-
-Multi-tool examples:
-- "What are your hours? Also I'd like to pause my subscription." → [faq_lookup, pause_subscription]
-- "Can I get a refund? And what's my billing history?" → [process_refund, fetch_payment_history]
-- Single clear intent → one-element tools array
-
-Extractable parameters (extract only values explicitly stated — never invent):
-- pause_subscription: start_date (YYYY-MM-DD), duration_days (integer, min 30), end_date (YYYY-MM-DD)
-- change_plan:        new_plan ("pass" or "black_card"), new_billing_type ("monthly" or "annual")
-- faq_lookup:         question (exact member question text)
-- policy_query:       question (exact member question text)
-
+_SELECTION_SYSTEM_SUFFIX = """\
 Call execute_plan with a tools array. Each entry has tool_name, tool_input (extractable params only),
 and justification. Do NOT include account_id, session_id, or confirmed in any tool_input.\
 """
+
+
+def _build_prompts() -> tuple[str, str]:
+    """
+    Build (classification_system, selection_system_base) from the active domain pack.
+    Called once at module import time; results cached as module-level constants.
+    """
+    from domains import load_domain_pack
+    pack = load_domain_pack(settings.domain_pack)
+    classification = _CLASSIFICATION_SYSTEM_TEMPLATE.format(
+        context=pack["classification_context"]
+    )
+    selection = (
+        _SELECTION_SYSTEM_PREAMBLE
+        + "\n\n"
+        + pack["selection_rules"]
+        + "\n\n"
+        + _SELECTION_SYSTEM_SUFFIX
+    )
+    return classification, selection
+
+
+_CLASSIFICATION_SYSTEM, _SELECTION_SYSTEM_BASE = _build_prompts()
 
 _EXECUTE_PLAN_SCHEMA: dict[str, Any] = {
     "name": "execute_plan",
