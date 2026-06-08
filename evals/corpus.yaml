@@ -1,0 +1,440 @@
+# evals/corpus.yaml
+#
+# Evaluation corpus for the Hybrid AI Operations Agent.
+#
+# Each case defines:
+#   id                   - unique identifier
+#   message              - natural language input
+#   account_id           - demo account to use (null for FAQ/policy only)
+#   expected_tools       - list of tools the planner should select (routing accuracy)
+#   expected_halt_reason - halt_reason after first call
+#   expected_policy_outcome - brief label for policy layer test
+#   notes                - optional context / edge case description
+#
+# Mock mode: LLM is bypassed; expected_tools is injected directly.
+#   Tests: halt_reason + policy_outcome correctness.
+#
+# Live mode: real LLM is used; routing accuracy is measured against expected_tools.
+#   Tests: routing accuracy + halt_reason + policy_outcome.
+#
+# Accounts:
+#   demo-pass-monthly             active Pass, monthly, within refund window, no history
+#   demo-pass-monthly-expired-window  active Pass, monthly, refund window expired (>14 days)
+#   demo-bc-annual                active Black Card, annual billing, within refund window
+#   demo-bc-cash                  active Black Card, cash payment, within refund window
+#   demo-refund-used              Pass, monthly, lifetime refund already used
+#   demo-pending                  active Pass, pending operation blocking new actions
+#   demo-paused                   paused Pass
+
+cases:
+
+# ─── FAQ lookup (7 cases) ─────────────────────────────────────────────────────
+
+  - id: faq_hours
+    message: "What are your operating hours?"
+    account_id: null
+    expected_tools: [faq_lookup]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Simple FAQ — operating hours
+
+  - id: faq_pricing_pass
+    message: "How much does the Pass plan cost?"
+    account_id: null
+    expected_tools: [faq_lookup]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Pricing FAQ
+
+  - id: faq_pricing_black_card
+    message: "What does the Black Card cost per year?"
+    account_id: null
+    expected_tools: [faq_lookup]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+
+  - id: faq_guest_pass
+    message: "How does the guest pass work?"
+    account_id: null
+    expected_tools: [faq_lookup]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+
+  - id: faq_payment_methods
+    message: "What payment methods do you accept?"
+    account_id: null
+    expected_tools: [faq_lookup]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+
+  - id: faq_replacement_card
+    message: "I lost my membership card, what do I do?"
+    account_id: null
+    expected_tools: [faq_lookup]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+
+  - id: faq_locations
+    message: "Can I use my Pass at any location worldwide?"
+    account_id: null
+    expected_tools: [faq_lookup]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+
+# ─── Policy query (6 cases) ───────────────────────────────────────────────────
+
+  - id: policy_refund_eligibility
+    message: "Am I eligible for a refund if I cancel within 14 days?"
+    account_id: null
+    expected_tools: [policy_query]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Policy question — refund window rule
+
+  - id: policy_pause_notice
+    message: "How much advance notice do I need to pause my subscription?"
+    account_id: null
+    expected_tools: [policy_query]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+
+  - id: policy_pause_fee
+    message: "Is there a fee for pausing my membership?"
+    account_id: null
+    expected_tools: [policy_query]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+
+  - id: policy_partial_refund
+    message: "Can I get a partial refund for the unused days?"
+    account_id: null
+    expected_tools: [policy_query]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Policy says no partial refunds — edge case
+
+  - id: policy_cancel_then_refund
+    message: "I cancelled my subscription — can I still get a refund?"
+    account_id: null
+    expected_tools: [policy_query]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Post-cancellation refund allowed within window
+
+  - id: policy_plan_change_during_pause
+    message: "Can I change my plan while my subscription is paused?"
+    account_id: null
+    expected_tools: [policy_query]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: "Policy: blocked"
+
+# ─── Process refund (7 cases) ────────────────────────────────────────────────
+
+  - id: refund_eligible_monthly
+    message: "I want a refund"
+    account_id: demo-pass-monthly
+    expected_tools: [process_refund]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: Happy path — within window, no prior refund
+
+  - id: refund_eligible_black_card
+    message: "I'd like to get my money back"
+    account_id: demo-bc-annual
+    expected_tools: [process_refund]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: Black Card annual plan — full €1200 refund eligible
+
+  - id: refund_expired_window
+    message: "I want a refund"
+    account_id: demo-pass-monthly-expired-window
+    expected_tools: [process_refund]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_expired_window
+    notes: ">14 days since purchase — REFUND_WINDOW_EXPIRED"
+
+  - id: refund_lifetime_limit
+    message: "I want a refund"
+    account_id: demo-refund-used
+    expected_tools: [process_refund]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_lifetime_limit
+    notes: Account already used its one lifetime refund
+
+  - id: refund_pending_blocked
+    message: "Can I get a refund?"
+    account_id: demo-pending
+    expected_tools: [process_refund]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_pending_operation
+
+  - id: refund_cash_payment
+    message: "I want a refund, I paid in cash"
+    account_id: demo-bc-cash
+    expected_tools: [process_refund]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: Cash payment — refund via cash
+
+  - id: refund_cancel_then_refund
+    message: "I cancelled my subscription last week, can I get a refund?"
+    account_id: demo-pass-monthly
+    expected_tools: [process_refund]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: Post-cancellation refund allowed (within window, policy allows it)
+
+# ─── Cancel subscription (4 cases) ───────────────────────────────────────────
+
+  - id: cancel_eligible
+    message: "I want to cancel my subscription"
+    account_id: demo-pass-monthly
+    expected_tools: [cancel_subscription]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+
+  - id: cancel_black_card
+    message: "Please cancel my membership"
+    account_id: demo-bc-annual
+    expected_tools: [cancel_subscription]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: BC annual — guest pass valid until period end
+
+  - id: cancel_already_cancelled
+    message: "Cancel my subscription"
+    account_id: demo-paused
+    expected_tools: [cancel_subscription]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: Paused account still has an active subscription — cancellation is eligible
+
+  - id: cancel_pending_blocked
+    message: "I want to cancel"
+    account_id: demo-pending
+    expected_tools: [cancel_subscription]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_pending_operation
+
+# ─── Pause subscription (8 cases) ────────────────────────────────────────────
+
+  - id: pause_no_params
+    message: "I want to pause my subscription"
+    account_id: demo-pass-monthly
+    expected_tools: [pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: No dates provided — form gate triggered
+
+  - id: pause_duration_short
+    message: "Pause my membership for 30 days starting next month"
+    account_id: demo-pass-monthly
+    expected_tools: [pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: Duration given but start_date not fully parseable without form
+
+  - id: pause_already_paused
+    message: "Pause my subscription"
+    account_id: demo-paused
+    expected_tools: [pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: Form gate fires first; ALREADY_PAUSED only surfaced after form submission
+
+  - id: pause_pending_blocked
+    message: "Freeze my membership"
+    account_id: demo-pending
+    expected_tools: [pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: Form gate fires before policy check
+
+  - id: pause_with_documentation
+    message: "I need to pause for medical reasons and have documentation"
+    account_id: demo-pass-monthly
+    expected_tools: [pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: has_documentation=True → escalation required (form needed)
+
+  - id: pause_long_duration_escalation
+    message: "Can I pause for 4 months?"
+    account_id: demo-pass-monthly
+    expected_tools: [pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: 4-6 months → escalation required (detected after form submit)
+
+  - id: pause_too_long_denied
+    message: "I want to pause for 7 months"
+    account_id: demo-pass-monthly
+    expected_tools: [pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: 7+ months → denied (detected after form submit)
+
+  - id: pause_freeze_synonym
+    message: "Freeze my gym membership"
+    account_id: demo-pass-monthly
+    expected_tools: [pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: '"freeze" synonym → pause_subscription (not cancel)'
+
+# ─── Change plan (4 cases) ────────────────────────────────────────────────────
+
+  - id: change_plan_no_params
+    message: "I want to change my membership plan"
+    account_id: demo-pass-monthly
+    expected_tools: [change_plan]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+
+  - id: change_plan_upgrade
+    message: "I want to upgrade to Black Card"
+    account_id: demo-pass-monthly
+    expected_tools: [change_plan]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: Upgrade intent clear but billing_type unknown — form needed
+
+  - id: change_plan_downgrade
+    message: "Switch me to the Pass plan"
+    account_id: demo-bc-annual
+    expected_tools: [change_plan]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: Downgrade — guest pass valid until period end, then invalidated
+
+  - id: change_plan_while_paused
+    message: "Change my plan to Black Card"
+    account_id: demo-paused
+    expected_tools: [change_plan]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: Plan change while paused blocked (detected after form submit)
+
+# ─── Fetch payment history (2 cases) ─────────────────────────────────────────
+
+  - id: payment_history
+    message: "Can I see my billing history?"
+    account_id: demo-pass-monthly
+    expected_tools: [fetch_payment_history]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+
+  - id: payment_history_recent
+    message: "What was my last charge?"
+    account_id: demo-bc-annual
+    expected_tools: [fetch_payment_history]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+
+# ─── Multi-tool (5 cases) ─────────────────────────────────────────────────────
+
+  - id: multi_faq_and_policy
+    message: "What are your hours and what is your cancellation policy?"
+    account_id: null
+    expected_tools: [faq_lookup, policy_query]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+
+  - id: multi_faq_and_refund
+    message: "What's my billing history and I also want a refund"
+    account_id: demo-pass-monthly
+    expected_tools: [fetch_payment_history, process_refund]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: "Multi-tool: fetch history then trigger refund confirmation"
+
+  - id: multi_faq_and_cancel
+    message: "What are your hours? Also please cancel my membership"
+    account_id: demo-pass-monthly
+    expected_tools: [faq_lookup, cancel_subscription]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+
+  - id: multi_policy_and_pause
+    message: "Is there a fee for pausing? Also I want to pause my membership"
+    account_id: demo-pass-monthly
+    expected_tools: [policy_query, pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: Policy Q answered first; then form gate for pause
+
+  - id: multi_faq_and_payment
+    message: "What does the Pass plan include and can I see my payment history?"
+    account_id: demo-pass-monthly
+    expected_tools: [faq_lookup, fetch_payment_history]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+
+# ─── Conflict / ambiguity (4 cases) ──────────────────────────────────────────
+
+  - id: conflict_refund_and_cancel
+    message: "I want a refund and also cancel my subscription"
+    account_id: demo-pass-monthly
+    expected_tools: [process_refund, cancel_subscription]
+    expected_halt_reason: ambiguity
+    expected_policy_outcome: conflict_detected
+    notes: Conflicting action tools — planner should ask member to choose
+
+  - id: conflict_refund_and_pause
+    message: "Refund me and also pause my subscription"
+    account_id: demo-pass-monthly
+    expected_tools: [process_refund, pause_subscription]
+    expected_halt_reason: ambiguity
+    expected_policy_outcome: conflict_detected
+
+  - id: ambiguity_unclear_request
+    message: "Fix my account"
+    account_id: null
+    expected_tools: [clarify]
+    expected_halt_reason: ambiguity
+    expected_policy_outcome: clarification_requested
+    notes: Genuinely unclear — planner should ask
+
+  - id: ambiguity_cancel_vs_pause
+    message: "Stop my membership for a few months"
+    account_id: demo-pass-monthly
+    expected_tools: [pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: '"a few months" → pause, not cancel (disambiguation rule)'
+
+# ─── Disambiguation edge cases (4 cases) ─────────────────────────────────────
+
+  - id: disambig_pause_no_duration
+    message: "I want to hold my membership"
+    account_id: demo-pass-monthly
+    expected_tools: [pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: '"hold" synonym → pause_subscription'
+
+  - id: disambig_changed_mind_refund
+    message: "I changed my mind and want my money back"
+    account_id: demo-pass-monthly
+    expected_tools: [process_refund]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: '"changed my mind" + "money back" → process_refund'
+
+  - id: disambig_suspend_synonym
+    message: "Suspend my gym membership for 2 months"
+    account_id: demo-pass-monthly
+    expected_tools: [pause_subscription]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: '"suspend" synonym → pause, not cancel'
+
+  - id: disambig_annual_billing_change
+    message: "Can I switch to paying annually instead of monthly?"
+    account_id: demo-pass-monthly
+    expected_tools: [change_plan]
+    expected_halt_reason: form_required
+    expected_policy_outcome: form_collected
+    notes: Billing-cycle change → change_plan
