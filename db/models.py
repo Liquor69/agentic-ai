@@ -85,6 +85,13 @@ class AgentLog(Base):
     # Decision trace — JSON array of {phase, data} steps (interpretation → selection → execution)
     trace            = Column(Text,        nullable=True)
 
+    # Observability (Phase 2)
+    latency_ms            = Column(Integer, nullable=True)  # wall-clock time for this run
+    prompt_tokens         = Column(Integer, nullable=True)  # total LLM input tokens
+    completion_tokens     = Column(Integer, nullable=True)  # total LLM output tokens
+    cache_read_tokens     = Column(Integer, nullable=True)  # tokens served from prompt cache
+    cache_creation_tokens = Column(Integer, nullable=True)  # tokens written to prompt cache
+
 
 # ─── Table 2: sessions ────────────────────────────────────────────────────────
 # Stores conversation history per session for memory.py.
@@ -128,6 +135,11 @@ def _migrate() -> None:
     from sqlalchemy import text as _text
     _additive = [
         "ALTER TABLE agent_logs ADD COLUMN trace TEXT",
+        "ALTER TABLE agent_logs ADD COLUMN latency_ms INTEGER",
+        "ALTER TABLE agent_logs ADD COLUMN prompt_tokens INTEGER",
+        "ALTER TABLE agent_logs ADD COLUMN completion_tokens INTEGER",
+        "ALTER TABLE agent_logs ADD COLUMN cache_read_tokens INTEGER",
+        "ALTER TABLE agent_logs ADD COLUMN cache_creation_tokens INTEGER",
     ]
     with engine.connect() as conn:
         for sql in _additive:

@@ -57,6 +57,11 @@ def write_log(
     iterations_used: int | None = None,
     halt_reason: str | None = None,
     trace: list[dict[str, Any]] | None = None,
+    latency_ms: int | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    cache_read_tokens: int | None = None,
+    cache_creation_tokens: int | None = None,
     db: Session | None = None,
 ) -> AgentLog:
     """
@@ -80,6 +85,11 @@ def write_log(
         iterations_used=iterations_used,
         halt_reason=halt_reason,
         trace=json.dumps(trace, default=str) if trace is not None else None,
+        latency_ms=latency_ms,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cache_read_tokens=cache_read_tokens,
+        cache_creation_tokens=cache_creation_tokens,
     )
 
     if db is not None:
@@ -130,6 +140,119 @@ def get_logs(
         return _query(db)
     with get_db() as _db:
         return _query(_db)
+
+
+def update_log_metrics(
+    log_id: int,
+    latency_ms: int,
+    token_usage: dict[str, int],
+    db: Session | None = None,
+) -> None:
+    """
+    Patch an existing agent_log row with timing and token data.
+    Called from core/agent.py after graph.invoke() returns, when we know both
+    the wall-clock latency and the accumulated LLM token counts for the run.
+    """
+    def _update(session: Session) -> None:
+        session.query(AgentLog).filter(AgentLog.id == log_id).update(
+            {
+                "latency_ms":            latency_ms,
+                "prompt_tokens":         token_usage.get("input_tokens", 0),
+                "completion_tokens":     token_usage.get("output_tokens", 0),
+                "cache_read_tokens":     token_usage.get("cache_read_input_tokens", 0),
+                "cache_creation_tokens": token_usage.get("cache_creation_input_tokens", 0),
+            },
+            synchronize_session=False,
+        )
+
+    if db is not None:
+        _update(db)
+        return
+    with get_db() as _db:
+        _update(_db)
+
+
+def get_metrics(
+    since: datetime | None = None,
+    until: datetime | None = None,
+    db: Session | None = None,
+) -> dict[str, Any]:
+    """
+    Aggregate stats from agent_logs for GET /metrics.
+
+    Returns:
+        period          — time range applied (ISO strings or null)
+        total_runs      — total log entries in the range
+        by_halt_reason  — count per halt_reason label
+        latency_ms      — avg / p50 / p95 wall-clock latency (rows with latency_ms != null)
+        tokens          — sum of prompt/completion/cache_read/cache_creation tokens
+        error_rate      — (tool_failure + internal_error) / total_runs
+    """
+    from sqlalchemy import func
+
+    def _compute(session: Session) -> dict[str, Any]:
+        q = session.query(AgentLog)
+        if since:
+            q = q.filter(AgentLog.timestamp >= since)
+        if until:
+            q = q.filter(AgentLog.timestamp <= until)
+
+        total = q.count()
+
+        # Halt-reason breakdown
+        halt_rows = (
+            q.with_entities(AgentLog.halt_reason, func.count(AgentLog.id))
+            .group_by(AgentLog.halt_reason)
+            .all()
+        )
+        by_halt: dict[str, int] = {(r[0] or "unknown"): r[1] for r in halt_rows}
+
+        # Token sums (NULL treated as 0)
+        sums = q.with_entities(
+            func.coalesce(func.sum(AgentLog.prompt_tokens), 0),
+            func.coalesce(func.sum(AgentLog.completion_tokens), 0),
+            func.coalesce(func.sum(AgentLog.cache_read_tokens), 0),
+            func.coalesce(func.sum(AgentLog.cache_creation_tokens), 0),
+        ).one()
+
+        # Latency percentiles (Python-side sort; filtered to rows with data)
+        lat_rows = (
+            q.with_entities(AgentLog.latency_ms)
+            .filter(AgentLog.latency_ms.isnot(None))
+            .all()
+        )
+        latencies = sorted(r[0] for r in lat_rows)
+        if latencies:
+            n = len(latencies)
+            avg_lat = round(sum(latencies) / n, 1)
+            p50 = latencies[n // 2]
+            p95 = latencies[min(n - 1, int(n * 0.95))]
+        else:
+            avg_lat = p50 = p95 = 0
+
+        error_count = by_halt.get("tool_failure", 0) + by_halt.get("internal_error", 0)
+
+        return {
+            "period": {
+                "since": since.isoformat() if since else None,
+                "until": until.isoformat() if until else None,
+            },
+            "total_runs": total,
+            "by_halt_reason": by_halt,
+            "latency_ms": {"avg": avg_lat, "p50": p50, "p95": p95},
+            "tokens": {
+                "total_prompt":          int(sums[0]),
+                "total_completion":      int(sums[1]),
+                "total_cache_read":      int(sums[2]),
+                "total_cache_creation":  int(sums[3]),
+            },
+            "error_rate": round(error_count / max(total, 1), 4),
+        }
+
+    if db is not None:
+        return _compute(db)
+    with get_db() as _db:
+        return _compute(_db)
 
 
 def get_log_by_id(log_id: int, db: Session | None = None) -> AgentLog | None:

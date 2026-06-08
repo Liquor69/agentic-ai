@@ -18,7 +18,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
-from api.schemas import CustomAccountRequest, LogEntryOut, LogsResponse, RunRequest, RunResponse, ToolInfo
+from api.schemas import CustomAccountRequest, LogEntryOut, LogsResponse, MetricsResponse, RunRequest, RunResponse, ToolInfo
 from config import settings
 from db import crud
 from tools.registry import get_tool_names_and_descriptions
@@ -104,6 +104,49 @@ async def get_logs(
 async def get_tools() -> list[ToolInfo]:
     """List all registered tools. Returns names and descriptions only — no schemas."""
     return [ToolInfo(**t) for t in get_tool_names_and_descriptions()]
+
+
+# ─── GET /metrics ────────────────────────────────────────────────────────────
+
+@router.get("/metrics", response_model=MetricsResponse, dependencies=[Depends(verify_api_key)])
+async def get_metrics(
+    since: datetime | None = Query(None, description="Earliest timestamp (ISO 8601)."),
+    until: datetime | None = Query(None, description="Latest timestamp (ISO 8601)."),
+) -> MetricsResponse:
+    """
+    Aggregated observability stats from agent_logs.
+
+    Returns total runs, halt-reason breakdown, latency percentiles (p50/p95),
+    cumulative token counts, and error rate. Optionally filtered to a time window.
+    """
+    data = crud.get_metrics(since=since, until=until)
+    return MetricsResponse(**data)
+
+
+# ─── GET /dashboard ───────────────────────────────────────────────────────────
+
+@router.get("/dashboard", include_in_schema=False)
+async def dashboard() -> dict:
+    """
+    Lightweight metrics dashboard data.
+    Returns the same payload as /metrics plus a last-10-runs preview.
+    Consumed by frontend/index.html to populate the Dashboard tab.
+    """
+    metrics = crud.get_metrics()
+    recent_logs = crud.get_logs(limit=10)
+    recent = [
+        {
+            "id":          log.id,
+            "session_id":  log.session_id,
+            "timestamp":   log.timestamp.isoformat() if log.timestamp else None,
+            "intent":      log.intent,
+            "halt_reason": log.halt_reason,
+            "latency_ms":  log.latency_ms,
+            "error":       bool(log.error),
+        }
+        for log in recent_logs
+    ]
+    return {**metrics, "recent_runs": recent}
 
 
 # ─── GET /accounts ────────────────────────────────────────────────────────────

@@ -69,6 +69,8 @@ def log_run(
     iterations_used: int | None = None,
     halt_reason: str | None = None,
     trace: list[dict[str, Any]] | None = None,
+    latency_ms: int | None = None,
+    token_usage: dict[str, int] | None = None,
 ) -> int:
     """
     Persist one complete agent run to the database and emit a structured log line.
@@ -83,6 +85,7 @@ def log_run(
 
     _log = logging.getLogger(__name__)
 
+    tu = token_usage or {}
     entry = write_log(
         session_id=session_id,
         input=input,
@@ -99,6 +102,11 @@ def log_run(
         iterations_used=iterations_used,
         halt_reason=halt_reason,
         trace=trace,
+        latency_ms=latency_ms,
+        prompt_tokens=tu.get("input_tokens"),
+        completion_tokens=tu.get("output_tokens"),
+        cache_read_tokens=tu.get("cache_read_input_tokens"),
+        cache_creation_tokens=tu.get("cache_creation_input_tokens"),
     )
 
     _log.info(

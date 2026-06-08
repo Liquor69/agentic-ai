@@ -12,11 +12,15 @@ The graph itself lives in core/planner.py.
 from __future__ import annotations
 
 import logging
+import time
 import traceback
 import uuid
+from typing import Any
 
 from api.schemas import RunResponse, TraceStep
+from config import get_token_usage, reset_token_counter
 from core.planner import AgentState, build_graph
+from db import crud
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +50,9 @@ def run_agent(
     """
     if not session_id:
         session_id = str(uuid.uuid4())
+
+    t0 = time.perf_counter()
+    reset_token_counter()
 
     graph = build_graph()
 
@@ -91,6 +98,7 @@ def run_agent(
     except Exception as exc:
         tb = traceback.format_exc()
         logger.error("graph.invoke crashed | session=%s | %s\n%s", session_id, exc, tb)
+        latency_ms = int((time.perf_counter() - t0) * 1000)
         return RunResponse(
             result="An internal error occurred. Please try again or contact support.",
             trace=[TraceStep(phase="error", data={"exception": str(exc), "traceback": tb})],
@@ -98,7 +106,21 @@ def run_agent(
             iterations_used=0,
             halt_reason="internal_error",
             error={"code": "INTERNAL_ERROR", "message": str(exc), "traceback": tb},
+            latency_ms=latency_ms,
+            token_usage=get_token_usage(),
         )
+
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+    token_usage = get_token_usage()
+
+    # Patch the persisted log entry with real latency + token counts.
+    # The log_id lives in the "log" phase trace step written by log_node.
+    log_id = _extract_log_id(final)
+    if log_id is not None:
+        try:
+            crud.update_log_metrics(log_id, latency_ms=latency_ms, token_usage=token_usage)
+        except Exception:
+            logger.warning("update_log_metrics failed for log_id=%s", log_id, exc_info=True)
 
     return RunResponse(
         result=final.get("final_response") or "",
@@ -111,4 +133,18 @@ def run_agent(
         halt_reason=final.get("halt_reason"),
         error=final.get("error"),
         form_spec=final.get("form_spec"),
+        latency_ms=latency_ms,
+        token_usage=token_usage,
     )
+
+
+def _extract_log_id(state: dict[str, Any]) -> int | None:
+    """
+    Pull the log row id from the 'log' phase trace step.
+    log_node stores it as data["log_id"] in the trace.
+    """
+    for step in reversed(state.get("trace") or []):
+        if step.get("phase") == "log":
+            lid = step.get("data", {}).get("log_id")
+            return int(lid) if lid is not None else None
+    return None

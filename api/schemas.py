@@ -79,6 +79,18 @@ class RunResponse(BaseModel):
             "Describes the fields to render in the form panel."
         ),
     )
+    # Observability (Phase 2)
+    latency_ms: int = Field(
+        default=0,
+        description="Wall-clock time for this run in milliseconds.",
+    )
+    token_usage: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Accumulated LLM token counts for the run: "
+            "input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens."
+        ),
+    )
 
 
 # ─── GET /logs ────────────────────────────────────────────────────────────────
@@ -102,6 +114,12 @@ class LogEntryOut(BaseModel):
     iterations_used: int | None
     halt_reason: str | None
     trace: list[dict[str, Any]] | None = None
+    # Observability (Phase 2)
+    latency_ms: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_creation_tokens: int | None = None
 
     @field_validator("trace", mode="before")
     @classmethod
@@ -131,6 +149,31 @@ class LogsResponse(BaseModel):
 class ToolInfo(BaseModel):
     name: str
     description: str
+
+
+# ─── GET /metrics ────────────────────────────────────────────────────────────
+
+class LatencyStats(BaseModel):
+    avg: float
+    p50: int
+    p95: int
+
+
+class TokenStats(BaseModel):
+    total_prompt: int
+    total_completion: int
+    total_cache_read: int
+    total_cache_creation: int
+
+
+class MetricsResponse(BaseModel):
+    """Aggregated observability stats from agent_logs. Returned by GET /metrics."""
+    period: dict[str, str | None]
+    total_runs: int
+    by_halt_reason: dict[str, int]
+    latency_ms: LatencyStats
+    tokens: TokenStats
+    error_rate: float
 
 
 # ─── POST /accounts/custom ────────────────────────────────────────────────────

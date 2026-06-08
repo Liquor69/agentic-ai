@@ -580,3 +580,102 @@ class TestAmbiguity:
             resp = run_agent("help me", SESSION, allow_history_reference=False)
 
         assert question in resp.result or "clarify" in resp.result.lower()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 12: Observability — latency_ms, token_usage, get_metrics
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestObservability:
+    def test_response_has_latency_ms(self, _register_tools):
+        """Every RunResponse exposes a non-negative latency_ms."""
+        from core.agent import run_agent
+        with _llm_patch(_classify("FAQ"), _select(_tool("faq_lookup", {"question": "hours?"})),
+                        _faq_response("Open 04:00-00:00.")):
+            resp = run_agent("hours", SESSION, allow_history_reference=False)
+        assert hasattr(resp, "latency_ms")
+        assert resp.latency_ms >= 0
+
+    def test_response_has_token_usage_dict(self, _register_tools):
+        """Every RunResponse exposes a token_usage dict (may be all-zero with mocks)."""
+        from core.agent import run_agent
+        with _llm_patch(_classify("FAQ"), _select(_tool("faq_lookup", {"question": "hours?"})),
+                        _faq_response("Open 04:00-00:00.")):
+            resp = run_agent("hours", SESSION, allow_history_reference=False)
+        assert isinstance(resp.token_usage, dict)
+
+    def test_db_row_updated_with_latency(self, _register_tools):
+        """update_log_metrics() patches the DB row; log entry has non-null latency_ms."""
+        from core.agent import run_agent
+        from db import crud
+        with _llm_patch(_classify("Refund"), _select(_tool("process_refund", {}))):
+            resp = run_agent("refund", SESSION, allow_history_reference=False,
+                             account_id="demo-pass-monthly")
+        assert resp.halt_reason == "confirmation_pending"
+        # Find the log entry and verify latency was persisted
+        logs = crud.get_logs(session_id=SESSION, limit=1)
+        assert logs
+        assert logs[0].latency_ms is not None
+        assert logs[0].latency_ms >= 0
+
+    def test_db_row_updated_with_token_counts(self, _register_tools):
+        """Token columns default to 0 (mocked calls return empty usage dicts)."""
+        from core.agent import run_agent
+        from db import crud
+        with _llm_patch(_classify("Refund"), _select(_tool("process_refund", {}))):
+            run_agent("refund", SESSION, allow_history_reference=False,
+                      account_id="demo-pass-monthly")
+        logs = crud.get_logs(session_id=SESSION, limit=1)
+        assert logs
+        # With mocked llm_call the usage dict is empty so tokens default to 0
+        assert logs[0].prompt_tokens == 0
+        assert logs[0].completion_tokens == 0
+
+    def test_get_metrics_returns_correct_shape(self, _register_tools):
+        """get_metrics() returns a dict with all required top-level keys."""
+        from core.agent import run_agent
+        from db import crud
+        with _llm_patch(_classify("FAQ"), _select(_tool("faq_lookup", {"question": "?"})),
+                        _faq_response("Answer.")):
+            run_agent("what?", SESSION, allow_history_reference=False)
+        metrics = crud.get_metrics()
+        assert "total_runs" in metrics
+        assert "by_halt_reason" in metrics
+        assert "latency_ms" in metrics
+        assert "tokens" in metrics
+        assert "error_rate" in metrics
+        assert isinstance(metrics["by_halt_reason"], dict)
+        assert isinstance(metrics["latency_ms"]["p50"], int)
+
+    def test_get_metrics_total_runs_increments(self, _register_tools):
+        """Each run_agent call adds one row; total_runs reflects the count."""
+        from core.agent import run_agent
+        from db import crud
+        before = crud.get_metrics()["total_runs"]
+        with _llm_patch(_classify("FAQ"), _select(_tool("faq_lookup", {"question": "?"})),
+                        _faq_response("Answer.")):
+            run_agent("a", SESSION, allow_history_reference=False)
+        with _llm_patch(_classify("FAQ"), _select(_tool("faq_lookup", {"question": "?"})),
+                        _faq_response("Answer.")):
+            run_agent("b", SESSION, allow_history_reference=False)
+        after = crud.get_metrics()["total_runs"]
+        assert after == before + 2
+
+    def test_get_metrics_error_rate_zero_on_clean_runs(self, _register_tools):
+        """Successful/pending runs contribute 0 to error_rate."""
+        from core.agent import run_agent
+        from db import crud
+        with _llm_patch(_classify("FAQ"), _select(_tool("faq_lookup", {"question": "?"})),
+                        _faq_response("Yes.")):
+            run_agent("q", SESSION, allow_history_reference=False)
+        metrics = crud.get_metrics()
+        # Only successes present — error_rate should be 0
+        assert metrics["error_rate"] == 0.0
+
+    def test_token_counter_resets_between_runs(self, _register_tools):
+        """reset_token_counter() is called per run; counters don't bleed across calls."""
+        from config import get_token_usage, reset_token_counter
+        reset_token_counter()
+        usage = get_token_usage()
+        assert usage.get("input_tokens", 0) == 0
+        assert usage.get("output_tokens", 0) == 0

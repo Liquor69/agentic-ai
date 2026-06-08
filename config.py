@@ -19,6 +19,7 @@ Caching strategy (Anthropic prompt caching):
 from __future__ import annotations
 
 import logging
+import threading
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,37 @@ def get_settings() -> Settings:
 
 
 settings: Settings = get_settings()
+
+
+# ─── Per-thread token accumulator ────────────────────────────────────────────
+# Each run_agent call resets the counter at entry and reads it at exit.
+# threading.local() gives each OS thread its own counter, so concurrent requests
+# (each running in asyncio.to_thread) don't interfere with each other.
+
+_token_local: threading.local = threading.local()
+
+
+def reset_token_counter() -> None:
+    """Reset the per-thread token accumulator. Called once at the start of each run."""
+    _token_local.usage = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+    }
+
+
+def _accumulate_usage(usage: dict[str, int]) -> None:
+    """Add LLM call token counts to the running total for this thread."""
+    if not hasattr(_token_local, "usage"):
+        reset_token_counter()
+    for key in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
+        _token_local.usage[key] = _token_local.usage.get(key, 0) + usage.get(key, 0)
+
+
+def get_token_usage() -> dict[str, int]:
+    """Return a snapshot of accumulated token counts for the current thread."""
+    return dict(getattr(_token_local, "usage", {}))
 
 
 # ─── Provider client singletons ───────────────────────────────────────────────
@@ -251,10 +283,13 @@ def llm_call(
     provider = settings.llm_provider.lower()
     try:
         if provider == "anthropic":
-            return _call_anthropic(messages, system, tools, model_tier, force_tool)
-        if provider == "openai":
-            return _call_openai(messages, system, tools, model_tier, force_tool)
-        return {"error": f"Unknown LLM_PROVIDER '{provider}'. Supported: anthropic, openai."}
+            result = _call_anthropic(messages, system, tools, model_tier, force_tool)
+        elif provider == "openai":
+            result = _call_openai(messages, system, tools, model_tier, force_tool)
+        else:
+            return {"error": f"Unknown LLM_PROVIDER '{provider}'. Supported: anthropic, openai."}
+        _accumulate_usage(result.get("usage") or {})
+        return result
     except Exception as exc:
         logger.exception("llm_call failed (provider=%s, tier=%s)", provider, model_tier)
         return {"error": str(exc)}
