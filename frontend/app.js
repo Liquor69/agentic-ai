@@ -11,10 +11,21 @@ const lockGroupUserSet = new Set();  // field names the user has explicitly ente
 const PHASE_CLASSES = {
   interpretation: 'phase-perceive',
   selection:      'phase-plan',
-  form:           'phase-plan',    // same colour as selection — it's still a planning phase
+  safety:         'phase-plan',
+  form:           'phase-plan',
   execution:      'phase-act',
   log:            'phase-log',
   error:          'phase-observe',
+};
+
+const PHASE_LABELS = {
+  interpretation: 'Read your request',
+  selection:      'Chose an action',
+  safety:         'Safety check',
+  form:           'Needs more info',
+  execution:      'Took action',
+  log:            'Saved the record',
+  error:          'Something went wrong',
 };
 
 // ─── Tag classification for colour coding ─────────────────────────────────────
@@ -202,47 +213,277 @@ function selectArchetype(archetype) {
   document.getElementById('no-account-notice').style.display = 'none';
 }
 
-// ─── Phase summary extractors ─────────────────────────────────────────────────
+// ─── Phase summary extractors (collapsed header line) ────────────────────────
 function phaseSummary(phase, data) {
   switch (phase) {
     case 'interpretation':
       return [
-        data.classification || 'input received',
-        data.account_id     ? `account: ${data.account_id}` : '',
-        data.history_length ? `${data.history_length} prior turn(s)` : '',
+        humanizeName(data.classification || 'input received'),
+        data.account_id ? data.account_id : '',
       ].filter(Boolean).join(' · ');
 
     case 'selection': {
-      if (data.intent === 'ambiguous') return 'ambiguous — clarifying question sent';
-      if (data.halt)                  return `halted: ${data.halt}`;
-      const tool = data.selected_tool || '—';
-      const miss = data.missing_params?.length ? ` · missing: ${data.missing_params.join(', ')}` : '';
-      const j    = data.justification ? ` — ${data.justification.slice(0, 60)}` : '';
-      return `→ ${tool}${j}${miss}`;
+      if (data.intent === 'ambiguous') return 'needs clarification';
+      if (data.halt)                   return `halted: ${humanizeName(data.halt)}`;
+      const tools = data.selected_tools || (data.selected_tool ? [data.selected_tool] : []);
+      const tool  = humanizeName(tools[0] || '—');
+      const miss  = data.missing_params?.length
+        ? ` · needs ${data.missing_params.length} more detail${data.missing_params.length !== 1 ? 's' : ''}`
+        : '';
+      return `using "${tool}"${miss}`;
     }
 
-    case 'form':
-      return `${data.tool_name || '—'} · missing: ${(data.missing_fields || []).join(', ')}`;
+    case 'safety':
+      return data.passed ? 'all checks passed' : 'check failed';
 
-    case 'execution':
-      if (data.confirmation_required) return `${data.tool_name} · awaiting confirmation`;
-      if (data.has_error)             return `${data.tool_name} · error`;
-      return `${data.tool_name || '—'} · ${data.halt_reason || 'executed'}`;
+    case 'form': {
+      const n = (data.missing_fields || []).length;
+      return `${humanizeName(data.tool_name || '—')} — needs ${n} more detail${n !== 1 ? 's' : ''}`;
+    }
+
+    case 'execution': {
+      const attempted = data.tools_attempted || (data.tool_name ? [data.tool_name] : []);
+      const label     = attempted.map(humanizeName).join(', ') || '—';
+      const failed    = (data.results || []).some(r => r.status === 'tool_failure');
+      if (data.confirmation_required) return `${label} — awaiting confirmation`;
+      if (failed || data.has_error)   return `${label} — error`;
+      return `${label} — done`;
+    }
 
     case 'log': {
-      const parts = [`log id ${data.log_id || '?'}`];
-      if (data.verified_changes && data.verified_changes.length)
-        parts.push(data.verified_changes[0].slice(0, 60));
-      if (data.form_required) parts.push(`form: ${data.form_tool}`);
-      return parts.join(' · ');
+      const n = data.verified_changes?.length || 0;
+      return `log #${data.log_id || '?'} · ${n} change${n !== 1 ? 's' : ''} recorded`;
     }
 
     case 'error':
-      return data.exception ? data.exception.slice(0, 80) : 'internal error';
+      return 'see details below';
 
     default:
       return '';
   }
+}
+
+// ─── Trace body helpers ───────────────────────────────────────────────────────
+function humanizeName(name) {
+  return (name || '').replace(/_/g, ' ');
+}
+
+function narrative(html) {
+  return `<div class="trace-narrative">${html}</div>`;
+}
+
+function sectionLabel(text) {
+  return `<div class="trace-section-label">${escapeHtml(text)}</div>`;
+}
+
+function _resultKvs(r) {
+  const kvs = [];
+  if (r.message)               kvs.push(['Message',      r.message]);
+  if (r.description)           kvs.push(['Details',      r.description]);
+  if (r.action)                kvs.push(['Action',       humanizeName(r.action)]);
+  if (r.refund_amount != null) kvs.push(['Refund',       `€${r.refund_amount}`]);
+  if (r.new_status)            kvs.push(['New status',   humanizeName(r.new_status)]);
+  if (r.pause_start)           kvs.push(['Pause start',  r.pause_start]);
+  if (r.pause_end)             kvs.push(['Pause end',    r.pause_end]);
+  if (r.next_billing_date)     kvs.push(['Next billing', r.next_billing_date]);
+  if (r.fee != null)           kvs.push(['Fee charged',  `€${r.fee}`]);
+  if (r.reason)                kvs.push(['Reason',       r.reason]);
+  return kvs;
+}
+
+function kvList(pairs) {
+  const rows = pairs.map(([k, v]) =>
+    `<div class="trace-kv"><span class="trace-kv-key">${escapeHtml(k)}</span><span class="trace-kv-val">${escapeHtml(String(v))}</span></div>`
+  ).join('');
+  return `<div class="trace-kv-list">${rows}</div>`;
+}
+
+function renderTraceBody(phase, data) {
+  const parts = [];
+
+  switch (phase) {
+    case 'interpretation': {
+      const intent = humanizeName(data.classification || data.intent || 'input received');
+      parts.push(narrative(`Understood your request as: <strong>${escapeHtml(intent)}</strong>`));
+      const kvs = [];
+      if (data.account_id)     kvs.push(['Account',     data.account_id]);
+      if (data.history_length) kvs.push(['Prior turns', String(data.history_length)]);
+      if (kvs.length)          parts.push(kvList(kvs));
+      break;
+    }
+
+    case 'selection': {
+      const selTools = data.selected_tools || (data.selected_tool ? [data.selected_tool] : []);
+      if (data.intent === 'ambiguous' || data.halt || !selTools.length) {
+        parts.push(narrative(`Could not determine a clear action — asked a clarifying question.`));
+        if (data.halt) parts.push(kvList([['Reason', humanizeName(data.halt)]]));
+      } else {
+        const toolNames = selTools.map(humanizeName).join(', ');
+        parts.push(narrative(`Decided to use <strong>${escapeHtml(toolNames)}</strong> to handle this.`));
+
+        // Old structure: justification + expected_result
+        const kvs = [];
+        if (data.justification)    kvs.push(['Why',      data.justification]);
+        if (data.expected_result)  kvs.push(['Expected', data.expected_result]);
+        if (kvs.length) parts.push(kvList(kvs));
+
+        // New structure: extracted_params_per_tool
+        if (data.extracted_params_per_tool) {
+          const entries = Object.entries(data.extracted_params_per_tool);
+          if (entries.length) {
+            parts.push(sectionLabel('Parameters detected'));
+            parts.push(kvList(entries.map(([t, p]) => [
+              humanizeName(t),
+              p.length ? p.join(', ') : 'None — no extra details needed',
+            ])));
+          }
+        }
+
+        // Old structure: constraint_validation
+        if (data.constraint_validation && Object.keys(data.constraint_validation).length) {
+          parts.push(sectionLabel('Policy checks'));
+          const chips = Object.entries(data.constraint_validation).map(([key, val]) => {
+            const ok  = val === true || val === 'pass' || val === 'ok' || val === 'clear';
+            const cls = ok ? 'trace-chip-ok' : 'trace-chip-warn';
+            return `<span class="trace-chip ${cls}">${ok ? '✓' : '⚠'} ${escapeHtml(humanizeName(key))}</span>`;
+          });
+          parts.push(`<div class="trace-chips">${chips.join('')}</div>`);
+        }
+
+        if (data.missing_params?.length) {
+          parts.push(sectionLabel('Still needed'));
+          const chips = data.missing_params.map(p =>
+            `<span class="trace-chip trace-chip-warn">⚠ ${escapeHtml(humanizeName(p))}</span>`
+          );
+          parts.push(`<div class="trace-chips">${chips.join('')}</div>`);
+        }
+      }
+      break;
+    }
+
+    case 'form': {
+      const tool = humanizeName(data.tool_name || '—');
+      parts.push(narrative(`A few more details are needed before <strong>${escapeHtml(tool)}</strong> can run.`));
+      if (data.missing_fields?.length) {
+        parts.push(sectionLabel('Missing information'));
+        const chips = data.missing_fields.map(f =>
+          `<span class="trace-chip trace-chip-warn">${escapeHtml(humanizeName(f))}</span>`
+        );
+        parts.push(`<div class="trace-chips">${chips.join('')}</div>`);
+      }
+      break;
+    }
+
+    case 'execution': {
+      if (data.results && Array.isArray(data.results)) {
+        const failed  = data.results.filter(r => r.status === 'tool_failure');
+        const success = data.results.filter(r => r.status !== 'tool_failure');
+
+        if (data.confirmation_required) {
+          const names = (data.tools_attempted || []).map(humanizeName).join(', ');
+          parts.push(narrative(`<strong>${escapeHtml(names)}</strong> is ready — waiting for your confirmation before making changes.`));
+        } else if (failed.length) {
+          // Any failure → lead with the failure; suppress unrelated successes
+          parts.push(narrative(`The action could not be completed.`));
+          for (const r of failed) {
+            if (failed.length > 1) parts.push(sectionLabel(humanizeName(r.tool)));
+            if (r.error) {
+              const kvs = [];
+              if (r.error.code)    kvs.push(['Error code', r.error.code]);
+              if (r.error.message) kvs.push(['Details',    r.error.message]);
+              if (kvs.length) parts.push(kvList(kvs));
+            }
+          }
+        } else {
+          // All succeeded — only surface results that have meaningful output
+          const meaningful = success.filter(r => r.result && _resultKvs(r.result).length > 0);
+          if (meaningful.length) {
+            const names = meaningful.map(r => humanizeName(r.tool)).join(', ');
+            parts.push(narrative(`<strong>${escapeHtml(names)}</strong> completed successfully.`));
+            for (const r of meaningful) {
+              if (meaningful.length > 1) parts.push(sectionLabel(humanizeName(r.tool)));
+              parts.push(kvList(_resultKvs(r.result)));
+            }
+          } else {
+            const names = (data.tools_attempted || success.map(r => r.tool)).map(humanizeName).join(', ');
+            parts.push(narrative(`<strong>${escapeHtml(names || '—')}</strong> completed.`));
+          }
+        }
+      } else {
+        // Old structure: tool_name, has_error, result
+        const tool = humanizeName(data.tool_name || '—');
+        if (data.confirmation_required) {
+          parts.push(narrative(`<strong>${escapeHtml(tool)}</strong> is ready — waiting for your confirmation before making changes.`));
+        } else if (data.has_error) {
+          parts.push(narrative(`<strong>${escapeHtml(tool)}</strong> encountered an error.`));
+        } else {
+          parts.push(narrative(`<strong>${escapeHtml(tool)}</strong> completed successfully.`));
+        }
+        if (data.result && typeof data.result === 'object') {
+          const kvs = _resultKvs(data.result);
+          if (kvs.length) parts.push(kvList(kvs));
+        }
+      }
+      break;
+    }
+
+    case 'safety': {
+      const passed      = data.passed !== false;
+      const toolChecked = (data.tools_checked || []).map(humanizeName);
+      parts.push(passed
+        ? narrative(`All safety checks passed — the request is safe to execute.`)
+        : narrative(`A safety check failed — this request was blocked.`));
+      if (toolChecked.length) {
+        const chips = toolChecked.map(t =>
+          `<span class="trace-chip ${passed ? 'trace-chip-ok' : 'trace-chip-error'}">${passed ? '✓' : '✗'} ${escapeHtml(t)}</span>`
+        );
+        parts.push(sectionLabel('Tools checked'));
+        parts.push(`<div class="trace-chips">${chips.join('')}</div>`);
+      }
+      break;
+    }
+
+    case 'log': {
+      parts.push(narrative(`This interaction was recorded (log <strong>#${escapeHtml(String(data.log_id || '—'))}</strong>).`));
+      if (data.verified_changes?.length) {
+        parts.push(sectionLabel('Changes made'));
+        const items = data.verified_changes.map(c => `<li>${escapeHtml(c)}</li>`).join('');
+        parts.push(`<ul class="trace-changes-list">${items}</ul>`);
+      } else {
+        parts.push(kvList([['Changes', 'None — read-only operation']]));
+      }
+      if (data.form_required) {
+        parts.push(`<div class="trace-chips"><span class="trace-chip trace-chip-warn">Form required: ${escapeHtml(humanizeName(data.form_tool || ''))}</span></div>`);
+      }
+      break;
+    }
+
+    case 'error': {
+      parts.push(narrative(`An error occurred while processing your request.`));
+      const kvs = [];
+      if (data.code)      kvs.push(['Error code', data.code]);
+      if (data.exception) kvs.push(['Details',    data.exception]);
+      if (kvs.length) parts.push(kvList(kvs));
+      break;
+    }
+
+    default: {
+      const kvs = Object.entries(data)
+        .filter(([, v]) => v != null && typeof v !== 'object')
+        .map(([k, v]) => [humanizeName(k), String(v)]);
+      if (kvs.length) parts.push(kvList(kvs));
+      break;
+    }
+  }
+
+  parts.push(`
+    <details class="trace-raw-toggle">
+      <summary></summary>
+      <div class="trace-raw-body">${escapeHtml(JSON.stringify(data, null, 2))}</div>
+    </details>
+  `);
+
+  return parts.join('');
 }
 
 // ─── Render helpers ───────────────────────────────────────────────────────────
@@ -250,20 +491,23 @@ function renderTrace(steps) {
   const container = document.getElementById('trace-container');
   container.innerHTML = '';
 
-  steps.forEach(({ phase, data }) => {
+  steps.forEach(({ phase, data }, idx) => {
     const phaseClass = PHASE_CLASSES[phase] || '';
+    const label      = PHASE_LABELS[phase] || phase;
     const summary    = phaseSummary(phase, data);
-    const body       = JSON.stringify(data, null, 2);
 
     const details = document.createElement('details');
     details.className = `trace-step ${phaseClass}`;
+    if (idx === 0) details.open = true;
+
     details.innerHTML = `
       <summary>
+        <span class="step-num">${idx + 1}</span>
         <span class="phase-dot"></span>
-        <span class="phase-name">${phase}</span>
-        <span class="phase-summary">${summary}</span>
+        <span class="phase-name">${escapeHtml(label)}</span>
+        <span class="phase-summary">${escapeHtml(summary)}</span>
       </summary>
-      <div class="trace-step-body">${escapeHtml(body)}</div>
+      <div class="trace-step-body">${renderTraceBody(phase, data)}</div>
     `;
     container.appendChild(details);
   });
@@ -286,6 +530,19 @@ function setStatus(text, loading = false) {
 
 function escapeHtml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function cleanResponseText(text) {
+  if (!text) return '';
+  // Extract "answer" field from ```json blocks; strip everything else
+  return text.replace(/```json\n([\s\S]*?)```/g, (_, json) => {
+    try {
+      const obj = JSON.parse(json);
+      return obj.answer ? '\n' + obj.answer : '';
+    } catch {
+      return '';
+    }
+  }).trim();
 }
 
 function setBadge(haltReason, hasError) {
@@ -783,7 +1040,7 @@ async function _doRequest({ message, confirmed = null, form_data = null }) {
     `session ${data.session_id} · ${data.iterations_used} iteration(s)` +
     (selectedAccountId ? ` · ${selectedAccountId}` : '');
 
-  document.getElementById('response-text').textContent = data.result || '';
+  document.getElementById('response-text').textContent = cleanResponseText(data.result || '');
   renderTrace(data.trace || []);
   renderError(data.error || null);
 
