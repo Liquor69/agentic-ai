@@ -199,3 +199,27 @@ async def set_custom_account(body: CustomAccountRequest) -> dict:
     from tools.customer_ops import set_custom_account as _set
     resolved_status = _set(body.model_dump())
     return {"account_id": "custom", "resolved_status": resolved_status}
+
+
+# ─── POST /accounts/{account_id}/reset ───────────────────────────────────────
+
+@router.post("/accounts/{account_id}/reset")
+async def reset_account(account_id: str) -> dict:
+    """
+    Delete the DB override for *account_id*, restoring its fixture default.
+    Returns {"account_id": account_id, "reset": true}.
+    """
+    crud.reset_demo_account_state(account_id)
+    return {"account_id": account_id, "reset": True}
+
+
+# ─── POST /accounts/reset ────────────────────────────────────────────────────
+
+@router.post("/accounts/reset")
+async def reset_all_accounts() -> dict:
+    """
+    Delete all demo account DB overrides, restoring all accounts to fixture defaults.
+    Returns {"reset": true, "accounts": "all"}.
+    """
+    crud.reset_all_demo_account_states()
+    return {"reset": True, "accounts": "all"}

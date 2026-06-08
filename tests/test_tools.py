@@ -32,6 +32,8 @@ def _register_tools():
     Ensure a clean registry for every test.
     Must evict tools.customer_ops from sys.modules so the module-level
     @register_tool decorators re-fire on each import.
+    Also resets any persisted demo account states so every test starts
+    from fixture defaults — required now that _get_account() reads the DB.
     """
     import sys
     from tools.registry import _REGISTRY
@@ -40,6 +42,12 @@ def _register_tools():
     for key in list(sys.modules):
         if key.startswith("tools.") and key != "tools.registry":
             del sys.modules[key]
+
+    # Ensure the demo_account_states table exists and is clean.
+    from db.models import create_tables
+    create_tables()
+    from db import crud
+    crud.reset_all_demo_account_states()
 
     import tools.customer_ops  # noqa: F401 — side-effect: registers all tools
     yield
@@ -390,3 +398,88 @@ class TestRegistry:
             assert "name" in item
             assert "description" in item
             assert "input_schema" not in item
+
+
+# ─── State persistence ────────────────────────────────────────────────────────
+
+class TestStatePersistence:
+    """
+    Verify that confirmed tool executions persist state changes to the DB
+    so that subsequent calls observe the mutated state.
+
+    Each test runs against the real (test) DB; the autouse _register_tools
+    fixture calls reset_all_demo_account_states() before each test so every
+    test starts from fixture defaults.
+    """
+
+    # ── Cancel → re-cancel ────────────────────────────────────────────────────
+
+    def test_cancel_then_recancel_fails_already_cancelled(self):
+        from tools.customer_ops import cancel_subscription, CancelInput
+        # First call confirmed=True: executes cancellation, persists status="cancelled"
+        r1 = cancel_subscription(CancelInput(account_id="demo-pass-monthly", session_id="t", confirmed=True))
+        assert r1.success is True
+        # Second call: _get_account() reads DB → status="cancelled" → auto_renewal=False
+        r2 = cancel_subscription(CancelInput(account_id="demo-pass-monthly", session_id="t"))
+        assert r2.error is not None
+        assert r2.error.code == "ALREADY_CANCELLED"
+
+    # ── Refund → re-refund ────────────────────────────────────────────────────
+
+    def test_refund_then_rerefund_escalates(self):
+        from tools.customer_ops import process_refund, RefundInput
+        # First call confirmed=True: persists status="refunded", refund_history_present=True
+        r1 = process_refund(RefundInput(account_id="demo-pass-monthly", session_id="t", confirmed=True))
+        assert r1.success is True
+        # Second call: status="refunded" → not is_active → refund window already elapsed path OR
+        # refund_history_present=True → REFUND_ESCALATION_REQUIRED
+        r2 = process_refund(RefundInput(account_id="demo-pass-monthly", session_id="t"))
+        assert r2.error is not None
+        # Either REFUND_ESCALATION_REQUIRED (if status check passes) or window/activity check
+        assert r2.error.code in ("REFUND_ESCALATION_REQUIRED", "NO_ACTIVE_SUBSCRIPTION")
+
+    # ── Pause → re-pause ──────────────────────────────────────────────────────
+
+    def test_pause_then_repause_fails_already_paused(self):
+        from tools.customer_ops import pause_subscription, PauseInput
+        start = date.today() + timedelta(days=20)
+        r1 = pause_subscription(PauseInput(
+            account_id="demo-pass-monthly", session_id="t",
+            start_date=start, duration_days=30, confirmed=True,
+        ))
+        assert r1.success is True
+        # Second attempt: status="paused" → ALREADY_PAUSED
+        r2 = pause_subscription(PauseInput(
+            account_id="demo-pass-monthly", session_id="t",
+            start_date=start, duration_days=30,
+        ))
+        assert r2.error is not None
+        assert r2.error.code == "ALREADY_PAUSED"
+
+    # ── Plan change persists ───────────────────────────────────────────────────
+
+    def test_plan_change_updates_persisted_plan(self):
+        from tools.customer_ops import change_plan, PlanChangeInput, _get_account
+        r1 = change_plan(PlanChangeInput(
+            account_id="demo-pass-monthly", session_id="t",
+            new_plan="black_card", new_billing_type="monthly", confirmed=True,
+        ))
+        assert r1.success is True
+        # Now the account should show the new plan
+        acct = _get_account("demo-pass-monthly")
+        assert acct.plan == "black_card"
+        assert acct.billing_cycle == "monthly"
+
+    # ── Reset restores fixture default ────────────────────────────────────────
+
+    def test_reset_restores_fixture_state(self):
+        from tools.customer_ops import cancel_subscription, CancelInput, _get_account
+        from db import crud
+        # Cancel to mutate state
+        cancel_subscription(CancelInput(account_id="demo-pass-monthly", session_id="t", confirmed=True))
+        acct_after = _get_account("demo-pass-monthly")
+        assert acct_after.status == "cancelled"
+        # Reset
+        crud.reset_demo_account_state("demo-pass-monthly")
+        acct_reset = _get_account("demo-pass-monthly")
+        assert acct_reset.status == "active"  # back to fixture default

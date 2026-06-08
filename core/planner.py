@@ -426,6 +426,27 @@ def _derive_verified_changes(tool_name: str, result: Any) -> list[str]:
     return changes or (["Operation completed — no account state changes"] if d.get("success") else [])
 
 
+def _serialise_result(result: Any) -> Any:
+    """
+    Safely convert a tool result to a JSON-compatible value for trace and log storage.
+    Pydantic models use model_dump(mode="json") so dates/enums are serialised correctly.
+    """
+    if result is None:
+        return None
+    if hasattr(result, "model_dump"):
+        return result.model_dump(mode="json")
+    if isinstance(result, dict):
+        try:
+            # Round-trip through JSON to catch any non-serialisable values
+            return json.loads(json.dumps(result, default=str))
+        except Exception:
+            return {k: str(v) for k, v in result.items()}
+    try:
+        return json.loads(json.dumps(result, default=str))
+    except Exception:
+        return str(result)
+
+
 # ─── Node: interpretation ─────────────────────────────────────────────────────
 
 def interpretation_node(state: AgentState) -> dict:
@@ -900,14 +921,24 @@ def execution_node(state: AgentState) -> dict:
         if isinstance(result, dict) and "error" in result:
             raw_err = result["error"]
             err = raw_err if isinstance(raw_err, dict) else vars(raw_err)
-            tool_results.append({"tool_name": tool_name, "halt_reason": "tool_failure", "error": err})
+            tool_results.append({
+                "tool_name": tool_name,
+                "halt_reason": "tool_failure",
+                "error": err,
+                "input_debug": {k: v for k, v in input_data.items() if k not in _SYSTEM_FIELDS},
+            })
             error = err
             # continue to next tool
 
         elif hasattr(result, "error") and result.error is not None:
             raw_err = result.error
             err = raw_err if isinstance(raw_err, dict) else raw_err.model_dump()
-            tool_results.append({"tool_name": tool_name, "halt_reason": "tool_failure", "error": err})
+            tool_results.append({
+                "tool_name": tool_name,
+                "halt_reason": "tool_failure",
+                "error": err,
+                "input_debug": {k: v for k, v in input_data.items() if k not in _SYSTEM_FIELDS},
+            })
             error = err
             # continue to next tool
 
@@ -923,7 +954,7 @@ def execution_node(state: AgentState) -> dict:
                 "_selection_justification": entry.get("justification"),
                 "_remaining_tools": selected_tools[idx + 1:],
                 "_completed_results": [
-                    {k: v for k, v in r.items() if k != "result"}
+                    {k: v for k, v in r.items() if k not in ("result", "result_serialised")}
                     for r in tool_results
                 ],
             }
@@ -936,7 +967,11 @@ def execution_node(state: AgentState) -> dict:
                     "session_id": state["session_id"],
                 },
             )
-            tool_results.append({"tool_name": tool_name, "halt_reason": "confirmation_pending"})
+            tool_results.append({
+                "tool_name": tool_name,
+                "halt_reason": "confirmation_pending",
+                "input_debug": {k: v for k, v in input_data.items() if k not in _SYSTEM_FIELDS},
+            })
             halt_reason = "confirmation_pending"
             break
 
@@ -949,6 +984,8 @@ def execution_node(state: AgentState) -> dict:
                 "halt_reason": "success",
                 "verified_changes": verified,
                 "result": result,
+                "result_serialised": _serialise_result(result),
+                "input_debug": {k: v for k, v in input_data.items() if k not in _SYSTEM_FIELDS},
             })
             if tool_name in _ACTION_TOOLS:
                 executed_action_tools.add(tool_name)
@@ -980,6 +1017,26 @@ def execution_node(state: AgentState) -> dict:
     else:
         verified_changes = None
 
+    # Build enriched trace entries — include input, error, verified_changes, and result
+    # per tool so the log has full debugging data without needing to re-run.
+    enriched_results = []
+    for r in tool_results:
+        entry: dict[str, Any] = {
+            "tool": r["tool_name"],
+            "status": r["halt_reason"],
+        }
+        if r.get("input_debug"):
+            entry["input"] = r["input_debug"]
+        if r.get("error"):
+            entry["error"] = r["error"]
+        if r.get("verified_changes"):
+            entry["verified_changes"] = r["verified_changes"]
+        if r.get("result_serialised") is not None:
+            entry["result"] = r["result_serialised"]
+        if r.get("blocker"):
+            entry["blocker"] = r["blocker"]
+        enriched_results.append(entry)
+
     return {
         "tool_result": tool_result,
         "tool_results": tool_results,
@@ -989,7 +1046,7 @@ def execution_node(state: AgentState) -> dict:
         "verified_changes": verified_changes,
         "trace": _trace(state, "execution", {
             "tools_attempted": [r["tool_name"] for r in tool_results],
-            "results": [{"tool": r["tool_name"], "status": r["halt_reason"]} for r in tool_results],
+            "results": enriched_results,
             "overall_halt_reason": halt_reason,
         }),
     }
@@ -1024,9 +1081,10 @@ def log_node(state: AgentState) -> dict:
         trace=list(state.get("trace") or []),
     )
 
-    # Build slim per-tool summary (no raw result objects — only outcome metadata)
+    # Build per-tool summary: exclude raw result object, keep serialised version
+    # and include input_debug so the log record has full debugging data.
     tool_results_summary = [
-        {k: v for k, v in r.items() if k != "result"}
+        {k: v for k, v in r.items() if k not in ("result",)}
         for r in (state.get("tool_results") or [])
     ]
     planned_tools = [t["tool_name"] for t in (state.get("selected_tools") or [])]

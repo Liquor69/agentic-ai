@@ -25,6 +25,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
+from db import crud
 from tools.registry import register_tool
 
 # ─── Load FAQ and policy from source-of-truth files ──────────────────────────
@@ -276,18 +277,61 @@ _MOCK_ACCOUNTS: dict[str, dict[str, Any]] = {
 
 def _get_account(account_id: str) -> AccountState | ToolError:
     """
-    DEMO STUB — returns a mock account.
+    DEMO STUB — returns a mock account, with DB-persisted overrides applied on top.
     Production replacement: GET /accounts/{account_id} from your member management backend.
     Returns ToolError if account is not found.
+
+    State lookup order:
+      1. Fixture baseline from _MOCK_ACCOUNTS (contains relative dates, always fresh).
+      2. DB override from demo_account_states (persisted by _persist_account_changes).
+         DB fields are merged on top of the fixture — only changed fields are overridden.
     """
-    data = _MOCK_ACCOUNTS.get(account_id)
-    if data is None:
+    fixture = _MOCK_ACCOUNTS.get(account_id)
+    if fixture is None:
         return ToolError(
             code="ACCOUNT_NOT_FOUND",
             message=f"No account found with ID '{account_id}'.",
             details={"account_id": account_id},
         )
-    return AccountState(**data)
+
+    db_state = crud.get_demo_account_state(account_id)
+    if db_state is not None:
+        # Merge DB override on top of fixture; convert ISO date strings back to date objects.
+        merged = dict(fixture)
+        for key, value in db_state.items():
+            if key == "last_payment_date" and isinstance(value, str):
+                try:
+                    merged[key] = date.fromisoformat(value)
+                except ValueError:
+                    pass
+            else:
+                merged[key] = value
+        return AccountState(**merged)
+
+    return AccountState(**fixture)
+
+
+def _persist_account_changes(account_id: str, changes: dict) -> None:
+    """
+    Apply *changes* to the current account state and write the result to DB.
+    Calling code should pass only the fields that changed — the rest are read
+    from the current state (DB override if present, else fixture) and preserved.
+    """
+    acct = _get_account(account_id)
+    if isinstance(acct, ToolError):
+        return  # Account not found — nothing to persist.
+
+    state: dict = {
+        "account_id": acct.account_id,
+        "plan": acct.plan,
+        "status": acct.status,
+        "billing_cycle": acct.billing_cycle,
+        "last_payment_date": acct.last_payment_date.isoformat(),
+        "refund_history_present": acct.refund_history_present,
+        "pending_action": acct.pending_action,
+    }
+    state.update(changes)
+    crud.set_demo_account_state(account_id, state)
 
 
 def set_custom_account(data: dict) -> str:
@@ -322,6 +366,16 @@ def set_custom_account(data: dict) -> str:
         "refund_history_present": bool(data["refund_history_present"]),
         "pending_action": bool(data["pending_action"]),
     }
+    # Also persist to DB so state survives across requests.
+    crud.set_demo_account_state("custom", {
+        "account_id": "custom",
+        "plan": data["plan"],
+        "status": status,
+        "billing_cycle": billing_cycle,
+        "last_payment_date": last_payment.isoformat() if isinstance(last_payment, date) else last_payment,
+        "refund_history_present": bool(data["refund_history_present"]),
+        "pending_action": bool(data["pending_action"]),
+    })
     return status
 
 
@@ -764,6 +818,10 @@ def process_refund(input: RefundInput) -> RefundOutput:
     # ── CONFIRMED — execute ──────────────────────────────────────────────────
     # DEMO STUB: replace with → POST /accounts/{account_id}/refund
     # Expected API payload: {"amount": refund_amount, "method": refund_method}
+    _persist_account_changes(input.account_id, {
+        "status": "refunded",
+        "refund_history_present": True,
+    })
     return RefundOutput(
         success=True,
         refund_amount=refund_amount,
@@ -860,6 +918,7 @@ def cancel_subscription(input: CancelInput) -> CancelOutput:
 
     # ── CONFIRMED — execute ──────────────────────────────────────────────────
     # DEMO STUB: replace with → PATCH /accounts/{account_id} {"auto_renewal": false}
+    _persist_account_changes(input.account_id, {"status": "cancelled"})
     return CancelOutput(
         success=True,
         auto_renewal_after=False,
@@ -1022,6 +1081,7 @@ def pause_subscription(input: PauseInput) -> PauseOutput:
     # ── CONFIRMED — execute ──────────────────────────────────────────────────
     # DEMO STUB: replace with → POST /accounts/{account_id}/pause
     # Expected payload: {"start_date": ..., "end_date": ..., "duration_days": ..., "fee": fee}
+    _persist_account_changes(input.account_id, {"status": "paused"})
     return PauseOutput(
         success=True,
         pause_fee=fee,
@@ -1175,6 +1235,10 @@ def change_plan(input: PlanChangeInput) -> PlanChangeOutput:
     # ── CONFIRMED — execute ──────────────────────────────────────────────────
     # DEMO STUB: replace with → PATCH /accounts/{account_id}/plan
     # Expected payload: {"new_plan": input.new_plan, "new_billing_type": input.new_billing_type}
+    _persist_account_changes(input.account_id, {
+        "plan": input.new_plan,
+        "billing_cycle": input.new_billing_type,
+    })
     return PlanChangeOutput(
         success=True,
         change_type=change_type,

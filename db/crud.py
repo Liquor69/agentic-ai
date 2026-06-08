@@ -20,7 +20,7 @@ from typing import Any, Generator
 from sqlalchemy.orm import Session
 
 from config import settings
-from db.models import AgentLog, PendingConfirmation, Session as SessionModel, SessionLocal
+from db.models import AgentLog, DemoAccountState, PendingConfirmation, Session as SessionModel, SessionLocal
 
 
 # ─── Session context manager ──────────────────────────────────────────────────
@@ -516,3 +516,93 @@ def purge_expired_confirmations(db: Session | None = None) -> int:
         return _purge(db)
     with get_db() as _db:
         return _purge(_db)
+
+
+# ─── Demo account state ───────────────────────────────────────────────────────
+
+def get_demo_account_state(account_id: str, db: Session | None = None) -> dict | None:
+    """
+    Return the persisted state dict for *account_id*, or None if no override exists.
+    None means the fixture default should be used — not that the account is absent.
+    """
+    def _get(session: Session) -> dict | None:
+        row = session.query(DemoAccountState).filter(
+            DemoAccountState.account_id == account_id
+        ).first()
+        if row is None:
+            return None
+        try:
+            return json.loads(row.state)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    if db is not None:
+        return _get(db)
+    with get_db() as _db:
+        return _get(_db)
+
+
+def set_demo_account_state(
+    account_id: str,
+    state_dict: dict,
+    db: Session | None = None,
+) -> None:
+    """
+    Upsert the full state dict for *account_id*.
+    Overwrites any existing row; creates one if absent.
+    """
+    now = datetime.utcnow()
+
+    def _set(session: Session) -> None:
+        row = session.query(DemoAccountState).filter(
+            DemoAccountState.account_id == account_id
+        ).first()
+        if row is None:
+            row = DemoAccountState(
+                account_id=account_id,
+                state=json.dumps(state_dict, default=str),
+                updated_at=now,
+            )
+            session.add(row)
+        else:
+            row.state = json.dumps(state_dict, default=str)
+            row.updated_at = now
+        session.flush()
+
+    if db is not None:
+        _set(db)
+        return
+    with get_db() as _db:
+        _set(_db)
+
+
+def reset_demo_account_state(account_id: str, db: Session | None = None) -> None:
+    """
+    Delete the DB override for *account_id*.
+    After this, _get_account() will fall back to the fixture default.
+    """
+    def _reset(session: Session) -> None:
+        session.query(DemoAccountState).filter(
+            DemoAccountState.account_id == account_id
+        ).delete(synchronize_session=False)
+
+    if db is not None:
+        _reset(db)
+        return
+    with get_db() as _db:
+        _reset(_db)
+
+
+def reset_all_demo_account_states(db: Session | None = None) -> None:
+    """
+    Delete all demo account overrides. Restores all accounts to fixture defaults.
+    Called by POST /accounts/reset.
+    """
+    def _reset_all(session: Session) -> None:
+        session.query(DemoAccountState).delete(synchronize_session=False)
+
+    if db is not None:
+        _reset_all(db)
+        return
+    with get_db() as _db:
+        _reset_all(_db)

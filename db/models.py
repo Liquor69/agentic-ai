@@ -6,10 +6,11 @@ SQLAlchemy table definitions.
 Default engine: SQLite (zero setup, file-based).
 Production swap: set DATABASE_URL=postgresql://... in .env — no code changes required.
 
-Three tables:
+Four tables:
   agent_logs            — one row per agent run, full decision trace
   sessions              — per-session conversation history for memory.py
   pending_confirmations — action confirmations awaiting member approval (TTL: 10 min)
+  demo_account_states   — persisted demo account state (overrides fixture defaults)
 """
 
 from __future__ import annotations
@@ -120,6 +121,20 @@ class PendingConfirmation(Base):
     created_at  = Column(DateTime,    nullable=False, default=datetime.utcnow)
     expires_at  = Column(DateTime,    nullable=False)
     is_resolved = Column(Boolean,     nullable=False, default=False)
+
+
+# ─── Table 4: demo_account_states ────────────────────────────────────────────
+# Stores mutated demo account state so tool side-effects persist across requests.
+# _get_account() in tools/customer_ops.py reads this table first and falls back
+# to the hardcoded fixture if no row exists (first-run default).
+# POST /accounts/{id}/reset deletes the row to restore fixture defaults.
+
+class DemoAccountState(Base):
+    __tablename__ = "demo_account_states"
+
+    account_id = Column(String(64), primary_key=True, nullable=False)
+    state      = Column(Text,       nullable=False)   # JSON-serialised AccountState fields
+    updated_at = Column(DateTime,   nullable=False,   default=datetime.utcnow)
 
 
 # ─── Table creation ───────────────────────────────────────────────────────────
