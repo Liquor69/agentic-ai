@@ -919,6 +919,8 @@ def execution_node(state: AgentState) -> dict:
 
         # ── Error ──────────────────────────────────────────────────────────
         if isinstance(result, dict) and "error" in result:
+            # Registry-level error (TOOL_NOT_FOUND, TOOL_INPUT_VALIDATION_FAILED).
+            # No tool body ran — no account snapshot or policy checks to capture.
             raw_err = result["error"]
             err = raw_err if isinstance(raw_err, dict) else vars(raw_err)
             tool_results.append({
@@ -931,12 +933,16 @@ def execution_node(state: AgentState) -> dict:
             # continue to next tool
 
         elif hasattr(result, "error") and result.error is not None:
+            # Policy-layer error: tool ran its checks and returned a ToolError.
+            # The result object also carries debug.account_snapshot + debug.policy_checks —
+            # serialise the full result so the trace shows which check failed and what it saw.
             raw_err = result.error
             err = raw_err if isinstance(raw_err, dict) else raw_err.model_dump()
             tool_results.append({
                 "tool_name": tool_name,
                 "halt_reason": "tool_failure",
                 "error": err,
+                "result_serialised": _serialise_result(result),
                 "input_debug": {k: v for k, v in input_data.items() if k not in _SYSTEM_FIELDS},
             })
             error = err
@@ -970,6 +976,7 @@ def execution_node(state: AgentState) -> dict:
             tool_results.append({
                 "tool_name": tool_name,
                 "halt_reason": "confirmation_pending",
+                "result_serialised": _serialise_result(result),  # carries debug.policy_checks
                 "input_debug": {k: v for k, v in input_data.items() if k not in _SYSTEM_FIELDS},
             })
             halt_reason = "confirmation_pending"
