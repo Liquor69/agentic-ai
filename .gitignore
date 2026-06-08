@@ -1,0 +1,33 @@
+# Secrets
+.env
+
+# Virtual environments
+.venv/
+venv/
+
+# Database
+*.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Test cache
+.pytest_cache/
+
+# Claude Code
+.claude/
+
+# Build / packaging
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/

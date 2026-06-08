@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Operations Agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3a;
+      --accent:    #6366f1;
+      --accent-dim:#4f46e5;
+      --accent-bg: rgba(99, 102, 241, 0.08);
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --success:   #22c55e;
+      --error:     #ef4444;
+      --warn:      #f59e0b;
+
+      --phase-perceive: #818cf8;
+      --phase-plan:     #34d399;
+      --phase-act:      #f59e0b;
+      --phase-observe:  #60a5fa;
+      --phase-log:      #a78bfa;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 3rem;
+    }
+
+    header {
+      width: 100%;
+      max-width: 860px;
+      margin-bottom: 1.75rem;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    header p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 860px;
+    }
+
+    .card + .card { margin-top: 1rem; }
+
+    /* ── Section label ── */
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+    }
+
+    .panel-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .panel-sub {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 1.1rem;
+    }
+
+    /* ── Archetype grid ── */
+    .archetype-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 0.6rem;
+    }
+
+    .archetype-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      padding: 0.75rem 0.9rem;
+      transition: border-color 0.15s, background 0.15s;
+      user-select: none;
+    }
+
+    .archetype-card:hover {
+      border-color: var(--accent);
+    }
+
+    .archetype-card.selected {
+      border-color: var(--accent);
+      background: var(--accent-bg);
+    }
+
+    .archetype-card-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+
+    .archetype-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      margin-bottom: 0.45rem;
+    }
+
+    .tag {
+      background: #1e2133;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 0.67rem;
+      font-weight: 500;
+      letter-spacing: 0.03em;
+      padding: 0.15rem 0.4rem;
+      color: var(--muted);
+    }
+
+    .tag-warn  { border-color: #78350f; color: var(--warn); background: #1c1104; }
+    .tag-error { border-color: #7f1d1d; color: var(--error); background: #1c0606; }
+    .tag-ok    { border-color: #14532d; color: var(--success); background: #051a0d; }
+    .tag-info  { border-color: #1e3a5f; color: #60a5fa; background: #070f1e; }
+
+    .archetype-desc {
+      font-size: 0.76rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    /* ── Account detail strip ── */
+    #account-detail {
+      margin-top: 0.9rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.8rem;
+      display: none;
+    }
+
+    #account-detail .detail-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem 1rem;
+      color: var(--muted);
+    }
+
+    #account-detail .detail-id {
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      margin-bottom: 0.4rem;
+    }
+
+    /* ── Custom account form ── */
+    #custom-form {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1rem 0.75rem;
+      margin-top: 0.75rem;
+    }
+
+    .cf-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+      gap: 0.65rem;
+    }
+
+    .cf-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .cf-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    select, input[type="date"], input[type="number"] {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.84rem;
+      padding: 0.45rem 0.65rem;
+      outline: none;
+      width: 100%;
+      color-scheme: dark;
+    }
+
+    select:focus, input[type="date"]:focus, input[type="number"]:focus { border-color: var(--accent); }
+
+    .cf-checks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      margin-top: 0.65rem;
+      align-items: center;
+    }
+
+    .cf-check-label {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.82rem;
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    input[type="checkbox"] {
+      accent-color: var(--accent);
+      cursor: pointer;
+      height: 14px;
+      width: 14px;
+    }
+
+    .cf-footer {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+
+    #cf-status-msg {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    /* ── Input area ── */
+    input[type="text"], textarea {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.9rem;
+      padding: 0.6rem 0.9rem;
+      outline: none;
+      transition: border-color 0.15s;
+      width: 100%;
+    }
+
+    input[type="text"]:focus, textarea:focus {
+      border-color: var(--accent);
+    }
+
+    textarea { resize: vertical; min-height: 72px; font-family: inherit; }
+
+    #session-input { font-size: 0.8rem; color: var(--muted); }
+    #session-input::placeholder { color: var(--muted); }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    label.toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    button {
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      padding: 0.6rem 1.4rem;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    button:hover { background: var(--accent-dim); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── No-account notice ── */
+    #no-account-notice {
+      background: #1a1408;
+      border: 1px solid #78350f;
+      border-radius: 8px;
+      color: var(--warn);
+      font-size: 0.82rem;
+      padding: 0.6rem 0.9rem;
+      margin-bottom: 0.75rem;
+      display: none;
+    }
+
+    /* ── Result area ── */
+    #result-area { margin-top: 1.5rem; display: none; }
+
+    .result-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .badge {
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.15rem 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .badge-success { background: #14532d; color: var(--success); }
+    .badge-error   { background: #450a0a; color: var(--error);   }
+    .badge-warn    { background: #451a03; color: var(--warn);    }
+
+    #response-text {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      padding: 1rem 1.1rem;
+      white-space: pre-wrap;
+      margin-bottom: 1.25rem;
+    }
+
+    /* ── Trace ── */
+    .trace-steps { display: flex; flex-direction: column; gap: 0.5rem; }
+
+    .trace-step {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .trace-step summary {
+      align-items: center;
+      cursor: pointer;
+      display: flex;
+      gap: 0.6rem;
+      list-style: none;
+      padding: 0.55rem 0.9rem;
+      font-size: 0.84rem;
+      user-select: none;
+    }
+
+    .trace-step summary::-webkit-details-marker { display: none; }
+
+    .phase-dot {
+      border-radius: 50%;
+      flex-shrink: 0;
+      height: 8px;
+      width: 8px;
+    }
+
+    .phase-perceive .phase-dot { background: var(--phase-perceive); }
+    .phase-plan     .phase-dot { background: var(--phase-plan); }
+    .phase-act      .phase-dot { background: var(--phase-act); }
+    .phase-observe  .phase-dot { background: var(--phase-observe); }
+    .phase-log      .phase-dot { background: var(--phase-log); }
+
+    .trace-step summary .phase-name {
+      font-weight: 600;
+      min-width: 70px;
+      text-transform: capitalize;
+    }
+
+    .trace-step summary .phase-summary {
+      color: var(--muted);
+      font-size: 0.8rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .trace-step-body {
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      overflow-x: auto;
+      padding: 0.75rem 1rem;
+      white-space: pre;
+    }
+
+    /* ── Raw JSON ── */
+    details.raw-json { margin-top: 1rem; }
+
+    details.raw-json > summary {
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.78rem;
+      list-style: none;
+      user-select: none;
+    }
+    details.raw-json > summary::-webkit-details-marker { display: none; }
+    details.raw-json > summary::before { content: '▶ '; font-size: 0.65rem; }
+    details.raw-json[open] > summary::before { content: '▼ '; }
+
+    .raw-json-body {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 0.75rem;
+      line-height: 1.5;
+      margin-top: 0.5rem;
+      max-height: 400px;
+      overflow: auto;
+      padding: 0.75rem 1rem;
+      white-space: pre;
+    }
+
+    /* ── Error block ── */
+    #error-block {
+      background: #1c0a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      display: none;
+    }
+
+    #error-message { color: var(--error); font-size: 0.9rem; margin-bottom: 0.5rem; }
+
+    /* ── Spinner ── */
+    .spinner {
+      animation: spin 0.7s linear infinite;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      display: inline-block;
+      height: 14px;
+      width: 14px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #status { font-size: 0.8rem; color: var(--muted); display: flex; align-items: center; gap: 0.5rem; }
+
+    /* ── Form controls ── */
+    #form-controls {
+      display: none;
+      background: #0a1120;
+      border: 1px solid #1e3a5f;
+      border-radius: 8px;
+      padding: 1rem 1.1rem 0.85rem;
+      margin-bottom: 1rem;
+    }
+
+    #form-controls .form-controls-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #60a5fa;
+      margin-bottom: 0.85rem;
+    }
+
+    .form-fields-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 0.7rem;
+    }
+
+    .form-field-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .form-field-row.full-width { grid-column: 1 / -1; }
+
+    .form-field-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .form-field-hint {
+      font-size: 0.71rem;
+      color: var(--muted);
+      opacity: 0.75;
+      line-height: 1.4;
+    }
+
+    .field-locked {
+      opacity: 0.6;
+      cursor: not-allowed !important;
+      pointer-events: none;
+      border-color: #1e3a5f !important;
+      color: #60a5fa !important;
+    }
+
+    .form-footer {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-top: 1rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    #form-cancel-btn {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 0.5rem 1.1rem;
+      font-size: 0.85rem;
+    }
+
+    #form-cancel-btn:hover { background: var(--border); }
+
+    #form-submit-btn {
+      background: #15803d;
+      padding: 0.5rem 1.2rem;
+      font-size: 0.85rem;
+    }
+
+    #form-submit-btn:hover { background: #166534; }
+
+    #form-error-msg {
+      font-size: 0.78rem;
+      color: var(--error);
+    }
+
+    /* ── Pause live preview ── */
+    .pause-preview {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .pause-preview-header {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #60a5fa;
+      margin-bottom: 0.6rem;
+    }
+
+    .pause-changes-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 0.75rem;
+    }
+
+    .pause-changes-table td {
+      padding: 0.28rem 0;
+      vertical-align: top;
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+
+    .pause-changes-table td:first-child {
+      color: var(--muted);
+      min-width: 130px;
+      padding-right: 1.25rem;
+      white-space: nowrap;
+    }
+
+    .pause-changes-table td:last-child {
+      color: var(--text);
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 0.78rem;
+    }
+
+    .pause-changes-table .preview-muted td {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .pause-notice {
+      border-left: 2px solid #4b5563;
+      color: #9ca3af;
+      font-size: 0.74rem;
+      line-height: 1.5;
+      padding: 0.4rem 0.65rem;
+      margin-top: 0.5rem;
+    }
+
+    .pause-escalation-note {
+      background: #1a1408;
+      border: 1px solid #92400e;
+      border-radius: 6px;
+      color: var(--warn);
+      font-size: 0.78rem;
+      line-height: 1.45;
+      padding: 0.55rem 0.75rem;
+      margin-bottom: 0.6rem;
+    }
+
+    /* ── Confirmation controls ── */
+    #confirm-controls {
+      display: none;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      padding: 0.9rem 1rem;
+      background: #1a1408;
+      border: 1px solid #92400e;
+      border-radius: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #confirm-controls .confirm-label {
+      font-size: 0.82rem;
+      color: var(--warn);
+      font-weight: 500;
+      flex: 1;
+    }
+
+    #confirm-yes {
+      background: #15803d;
+      padding: 0.5rem 1.2rem;
+      font-size: 0.85rem;
+    }
+    #confirm-yes:hover { background: #166534; }
+
+    #confirm-no {
+      background: #7f1d1d;
+      padding: 0.5rem 1.2rem;
+      font-size: 0.85rem;
+    }
+    #confirm-no:hover { background: #991b1b; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>AI Operations Agent</h1>
+  <p>Natural language → intent classification → tool execution → structured trace</p>
+</header>
+
+<!-- ─── Panel 1: Set Your Account ───────────────────────────────────────────── -->
+<div class="card">
+  <div class="panel-title">Set Your Account</div>
+  <div class="panel-sub">Choose a demo profile — this represents the customer the agent is acting on.</div>
+
+  <div class="archetype-grid" id="archetype-grid">
+    <div style="color:var(--muted);font-size:0.82rem">Loading profiles…</div>
+  </div>
+
+  <!-- Custom account form (toggled by the Custom card) -->
+  <div id="custom-form" style="display:none">
+    <div class="cf-grid">
+      <div class="cf-field">
+        <span class="cf-label">Plan</span>
+        <select id="cf-plan">
+          <option value="pass">Pass</option>
+          <option value="black_card">Black Card</option>
+        </select>
+      </div>
+      <div class="cf-field">
+        <span class="cf-label">Status</span>
+        <select id="cf-status-select">
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="refunded">Refunded</option>
+        </select>
+      </div>
+      <div class="cf-field">
+        <span class="cf-label">Billing Cycle</span>
+        <select id="cf-billing-cycle">
+          <option value="monthly">Monthly</option>
+          <option value="annual">Annual</option>
+        </select>
+      </div>
+      <div class="cf-field">
+        <span class="cf-label">Last Payment Date</span>
+        <input type="date" id="cf-last-payment-date" />
+      </div>
+    </div>
+    <div class="cf-checks">
+      <label class="cf-check-label">
+        <input type="checkbox" id="cf-refund-history" />
+        Refund history present
+      </label>
+      <label class="cf-check-label">
+        <input type="checkbox" id="cf-pending-action" />
+        Pending action
+      </label>
+    </div>
+    <div class="cf-footer">
+      <button id="cf-apply-btn" onclick="applyCustomAccount()" style="padding:0.5rem 1.2rem;font-size:0.85rem">Apply</button>
+      <span id="cf-status-msg"></span>
+    </div>
+  </div>
+
+  <div id="account-detail"></div>
+</div>
+
+<!-- ─── Panel 2: Customer Experience ────────────────────────────────────────── -->
+<div class="card">
+  <div class="panel-title">Customer Experience</div>
+  <div class="panel-sub">Type a request as if you're the customer. The agent will classify, select a tool, and respond.</div>
+
+  <div id="no-account-notice">Select a profile above before submitting a request.</div>
+
+  <textarea id="message-input" placeholder="e.g. I'd like to pause my membership for 2 months starting July 1st"></textarea>
+
+  <div class="input-row" style="margin-top:0.75rem;display:flex;gap:0.75rem">
+    <input type="text" id="session-input" placeholder="Session ID (leave blank to auto-generate)" />
+  </div>
+
+  <div class="controls" style="margin-top:0.75rem">
+    <label class="toggle">
+      <input type="checkbox" id="history-toggle" checked />
+      Remember session history
+    </label>
+    <div style="flex:1"></div>
+    <div id="status"></div>
+    <button id="submit-btn" onclick="submitRequest()">Run</button>
+  </div>
+
+  <div id="confirm-controls">
+    <span class="confirm-label">Action requires confirmation — review the details above</span>
+    <button id="confirm-yes" onclick="sendConfirmation(true)">YES — Confirm</button>
+    <button id="confirm-no"  onclick="sendConfirmation(false)">NO — Cancel</button>
+  </div>
+
+  <!-- Form panel — rendered dynamically when halt_reason="form_required" -->
+  <div id="form-controls"></div>
+
+  <div id="result-area">
+    <div class="result-header">
+      <span id="halt-badge" class="badge"></span>
+      <span id="meta-text"></span>
+    </div>
+
+    <div id="response-text"></div>
+
+    <div class="section-label">Decision Trace</div>
+    <div class="trace-steps" id="trace-container"></div>
+
+    <div id="error-block">
+      <div id="error-message"></div>
+      <details class="raw-json">
+        <summary>Raw error</summary>
+        <div class="raw-json-body" id="error-raw"></div>
+      </details>
+    </div>
+
+    <details class="raw-json" style="margin-top:1rem">
+      <summary>Raw JSON response</summary>
+      <div class="raw-json-body" id="raw-json"></div>
+    </details>
+  </div>
+</div>
+
+<script src="app.js?v=7"></script>
+</body>
+</html>
