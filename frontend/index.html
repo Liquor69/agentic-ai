@@ -168,6 +168,10 @@
     }
     .intro-steps li { margin-bottom: 0.1rem; }
 
+    /* ── Pitch card accent ── */
+    .intro-card-pitch { border-color: rgba(99,102,241,0.35); }
+    .intro-card-pitch > summary .intro-summary-title { color: var(--accent); }
+
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -968,15 +972,48 @@
       </div>
     </div>
 
-    <div class="intro-section-label">How to use this demo</div>
-    <div class="intro-instructions">
-      <ol class="intro-steps">
-        <li>Open <strong>Set Your Account</strong> and pick a profile. Each profile simulates a real customer situation — the tags on each card (e.g. "Refund eligible", "No refund", "Currently paused") tell you what conditions apply.</li>
-        <li>Type a request in plain English in the <strong>Customer Experience</strong> panel, as if you are that customer. You don't need to use any specific wording — the agent figures out the intent.</li>
-        <li>Read the <strong>Decision Trace</strong> that appears below the response. Each step shows what the agent did: how it interpreted the request, which action it chose, which policy rules it checked, and what it executed.</li>
-        <li>Try the same request with different profiles to see how the outcome changes based on account state.</li>
-      </ol>
-    </div>
+  </div>
+</details>
+
+<!-- ─── How to use this demo ─────────────────────────────────────────────────── -->
+<details class="card intro-card">
+  <summary>
+    <span class="intro-summary-title">How to use this demo</span>
+    <span class="intro-chevron"></span>
+  </summary>
+  <div class="intro-body">
+    <ol class="intro-steps">
+      <li>Open <strong>Set Your Account</strong> and pick a profile. Each profile simulates a real customer situation — the tags on each card (e.g. "Refund eligible", "No refund", "Currently paused") tell you what conditions apply.</li>
+      <li>Type a request in plain English in the <strong>Customer Experience</strong> panel, as if you are that customer. You don't need to use any specific wording — the agent figures out the intent.</li>
+      <li>Read the <strong>Decision Trace</strong> that appears below the response. Each step shows what the agent did: how it interpreted the request, which action it chose, which policy rules it checked, and what it executed.</li>
+      <li>Try the same request with different profiles to see how the outcome changes based on account state.</li>
+    </ol>
+  </div>
+</details>
+
+<!-- ─── What you can check ────────────────────────────────────────────────────── -->
+<details class="card intro-card">
+  <summary>
+    <span class="intro-summary-title">What you can check</span>
+    <span class="intro-chevron"></span>
+  </summary>
+  <div class="intro-body">
+    <ol class="intro-steps">
+      <li>Whether the actions performed match the policy constraints stated above.</li>
+      <li>Whether ambiguous, malicious, or non-standard prompts break the system or result in losses.</li>
+      <li>Full decision trace, viewable as both formatted text and raw JSON.</li>
+    </ol>
+  </div>
+</details>
+
+<!-- ─── Why this also works for you ──────────────────────────────────────────── -->
+<details class="card intro-card intro-card-pitch">
+  <summary>
+    <span class="intro-summary-title">Why this also works for you</span>
+    <span class="intro-chevron"></span>
+  </summary>
+  <div class="intro-body">
+    <p>The designed architecture isn't bound to refunds or subscriptions — those are just one set of constraints and available actions. The core logic is domain-agnostic, meaning it can be applied to virtually any business domain, as long as there are discrete rules and actions that need to be executed reliably.</p>
   </div>
 </details>
 
@@ -1106,6 +1143,6 @@
   </div>
 </div>
 
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>
