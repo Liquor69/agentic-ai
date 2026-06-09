@@ -78,7 +78,7 @@ class AccountState(BaseModel):
       expired   — period ended with no renewal
     """
     account_id: str
-    plan: str                  # "pass" | "black_card"
+    plan: str                  # "standard" | "premium"
     status: str
     billing_cycle: str         # "monthly" | "annual"
     last_payment_date: date
@@ -125,45 +125,45 @@ class AccountState(BaseModel):
 ARCHETYPES: list[dict[str, Any]] = [
     {
         "id": "demo-pass-monthly",
-        "label": "Pass · Monthly",
+        "label": "Standard · Monthly",
         "tags": ["Refund eligible"],
-        "description": "Active monthly Pass member, purchased 5 days ago. Within the 14-day refund window.",
+        "description": "Active monthly Standard member, purchased 5 days ago. Within the 14-day refund window.",
     },
     {
         "id": "demo-pass-monthly-expired-window",
-        "label": "Pass · Monthly · Window expired",
+        "label": "Standard · Monthly · Window expired",
         "tags": ["No refund"],
-        "description": "Monthly Pass member purchased 20 days ago. Refund window has closed.",
+        "description": "Monthly Standard member purchased 20 days ago. Refund window has closed.",
     },
     {
         "id": "demo-bc-annual",
-        "label": "Black Card · Annual",
+        "label": "Premium · Annual",
         "tags": ["Refund eligible", "High value"],
-        "description": "Annual Black Card member, purchased 7 days ago. Full €1,200 refundable. Guest pass included.",
+        "description": "Annual Premium member, purchased 7 days ago. Full €1,200 refundable. Guest pass included.",
     },
     {
         "id": "demo-bc-cash",
-        "label": "Black Card · Monthly",
+        "label": "Premium · Monthly",
         "tags": ["Refund eligible"],
-        "description": "Active monthly Black Card member, purchased 3 days ago. Within the 14-day refund window. Guest pass included.",
+        "description": "Active monthly Premium member, purchased 3 days ago. Within the 14-day refund window. Guest pass included.",
     },
     {
         "id": "demo-refund-used",
-        "label": "Pass · Monthly · Refund used",
+        "label": "Standard · Monthly · Refund used",
         "tags": ["Refund escalates"],
-        "description": "Monthly Pass member with a prior refund on record. Further refund requests are escalated to support.",
+        "description": "Monthly Standard member with a prior refund on record. Further refund requests are escalated to support.",
     },
     {
         "id": "demo-pending",
-        "label": "Pass · Monthly · Pending op",
+        "label": "Standard · Monthly · Pending op",
         "tags": ["Blocked", "Has pending operation"],
-        "description": "Monthly Pass member with an active pending operation. All new action requests are blocked until resolved.",
+        "description": "Monthly Standard member with an active pending operation. All new action requests are blocked until resolved.",
     },
     {
         "id": "demo-paused",
-        "label": "Black Card · Monthly · Paused",
+        "label": "Premium · Monthly · Paused",
         "tags": ["Currently paused", "Plan change blocked"],
-        "description": "Monthly Black Card member on a pause. Plan changes blocked; refund window closed.",
+        "description": "Monthly Premium member on a pause. Plan changes blocked; refund window closed.",
     },
 ]
 
@@ -196,7 +196,7 @@ def get_pause_preview_context(account_id: str) -> dict | None:
         return None
     return {
         "subscription_valid_until": acct.subscription_valid_until.isoformat(),
-        "has_guest_pass": acct.plan == "black_card",
+        "has_guest_pass": acct.plan == "premium",
         "fee_per_period": PAUSE_FEE_PER_MONTH,
         "fee_max_days": PAUSE_FEE_MAX_DAYS,
         "escalation_threshold_days": PAUSE_ESCALATE_DAYS,
@@ -207,7 +207,7 @@ def get_pause_preview_context(account_id: str) -> dict | None:
 _MOCK_ACCOUNTS: dict[str, dict[str, Any]] = {
     "demo-pass-monthly": {
         "account_id": "demo-pass-monthly",
-        "plan": "pass",
+        "plan": "standard",
         "status": "active",
         "billing_cycle": "monthly",
         "last_payment_date": date.today() - timedelta(days=5),
@@ -216,7 +216,7 @@ _MOCK_ACCOUNTS: dict[str, dict[str, Any]] = {
     },
     "demo-pass-monthly-expired-window": {
         "account_id": "demo-pass-monthly-expired-window",
-        "plan": "pass",
+        "plan": "standard",
         "status": "active",
         "billing_cycle": "monthly",
         "last_payment_date": date.today() - timedelta(days=20),
@@ -225,7 +225,7 @@ _MOCK_ACCOUNTS: dict[str, dict[str, Any]] = {
     },
     "demo-bc-annual": {
         "account_id": "demo-bc-annual",
-        "plan": "black_card",
+        "plan": "premium",
         "status": "active",
         "billing_cycle": "annual",
         "last_payment_date": date.today() - timedelta(days=7),
@@ -236,7 +236,7 @@ _MOCK_ACCOUNTS: dict[str, dict[str, Any]] = {
         # Payment method is not stored in the DB — refund goes via original payment method.
         # A €10 replacement card fee was charged separately; only the plan price (€120) is refundable.
         "account_id": "demo-bc-cash",
-        "plan": "black_card",
+        "plan": "premium",
         "status": "active",
         "billing_cycle": "monthly",
         "last_payment_date": date.today() - timedelta(days=3),
@@ -245,7 +245,7 @@ _MOCK_ACCOUNTS: dict[str, dict[str, Any]] = {
     },
     "demo-refund-used": {
         "account_id": "demo-refund-used",
-        "plan": "pass",
+        "plan": "standard",
         "status": "active",
         "billing_cycle": "monthly",
         "last_payment_date": date.today() - timedelta(days=2),
@@ -254,7 +254,7 @@ _MOCK_ACCOUNTS: dict[str, dict[str, Any]] = {
     },
     "demo-pending": {
         "account_id": "demo-pending",
-        "plan": "pass",
+        "plan": "standard",
         "status": "active",
         "billing_cycle": "monthly",
         "last_payment_date": date.today() - timedelta(days=1),
@@ -265,7 +265,7 @@ _MOCK_ACCOUNTS: dict[str, dict[str, Any]] = {
         # last_payment_date 20 days ago → refund window expired (>14 days).
         # subscription_valid_until derived as last_payment_date + 30 = today + 10 days.
         "account_id": "demo-paused",
-        "plan": "black_card",
+        "plan": "premium",
         "status": "paused",
         "billing_cycle": "monthly",
         "last_payment_date": date.today() - timedelta(days=20),
@@ -404,8 +404,8 @@ def _account_snapshot(acct: AccountState) -> dict:
 # ─── Plan price table ─────────────────────────────────────────────────────────
 
 _PLAN_PRICES: dict[str, dict[str, float]] = {
-    "pass":       {"monthly": 60.0,   "annual": 600.0},
-    "black_card": {"monthly": 120.0,  "annual": 1_200.0},
+    "standard": {"monthly": 60.0,   "annual": 600.0},
+    "premium": {"monthly": 120.0,  "annual": 1_200.0},
 }
 
 REFUND_WINDOW_DAYS    = 14   # calendar days from last_payment_date
@@ -550,7 +550,7 @@ def _upgrade_delta_charge(acct: AccountState, new_billing_cycle: str) -> float:
     days_remaining = max(0, (acct.subscription_valid_until - date.today()).days)
     days_in_period = 30 if acct.billing_cycle == "monthly" else 365
     current_daily_rate = _PLAN_PRICES[acct.plan][acct.billing_cycle] / days_in_period
-    new_price = _PLAN_PRICES["black_card"][new_billing_cycle]
+    new_price = _PLAN_PRICES["premium"][new_billing_cycle]
     charge = new_price - (days_remaining * current_daily_rate)
     return round(max(0.0, charge), 2)
 
@@ -834,7 +834,7 @@ def process_refund(input: RefundInput) -> RefundOutput:
     # Refund covers plan price only — extra fees are non-refundable.
     refund_amount = acct.plan_price
     refund_method = "original payment method"
-    has_guest = acct.plan == "black_card"
+    has_guest = acct.plan == "premium"
 
     if not input.confirmed:
         payload = ConfirmationPayload(
@@ -974,7 +974,7 @@ def cancel_subscription(input: CancelInput) -> CancelOutput:
         _chk("auto_renewal_enabled", None, auto_renewal=acct.auto_renewal)
 
     valid_until = acct.subscription_valid_until.isoformat()
-    has_guest = acct.plan == "black_card"
+    has_guest = acct.plan == "premium"
 
     if not input.confirmed:
         payload = ConfirmationPayload(
@@ -1156,7 +1156,7 @@ def pause_subscription(input: PauseInput) -> PauseOutput:
     pause_end = input.end_date  # type: ignore[assignment]
     new_renewal = acct.subscription_valid_until + timedelta(days=input.duration_days)
     fee = _pause_fee(input.duration_days)
-    has_guest = acct.plan == "black_card"
+    has_guest = acct.plan == "premium"
     periods = math.ceil(input.duration_days / 30)
 
     fee_str = f"€{fee:.2f} (€{PAUSE_FEE_PER_MONTH:.0f}/30-day period × {periods} period(s))"
@@ -1333,7 +1333,7 @@ def change_plan(input: PlanChangeInput) -> PlanChangeOutput:
         change_type = "upgrade"
         guest_note = (
             "Guest pass issued immediately."
-            if input.new_plan == "black_card"
+            if input.new_plan == "premium"
             else "N/A — Pass plan has no guest pass."
         )
         billing_note = f"Immediate delta charge: €{charge:.2f}."
@@ -1345,7 +1345,7 @@ def change_plan(input: PlanChangeInput) -> PlanChangeOutput:
         change_type = "downgrade"
         guest_note = (
             f"Guest pass valid until {effective_date}, then invalidated."
-            if acct.plan == "black_card"
+            if acct.plan == "premium"
             else "N/A — Pass plan has no guest pass."
         )
         billing_note = f"No charge now. Change takes effect at period end ({effective_date})."
@@ -1382,7 +1382,7 @@ def change_plan(input: PlanChangeInput) -> PlanChangeOutput:
             confirmation_required=True,
             confirmation_payload=payload,
             debug=_dbg(change_type=change_type, charge=charge,
-                       effective_date=effective_date, has_guest_pass=(acct.plan == "black_card")),
+                       effective_date=effective_date, has_guest_pass=(acct.plan == "premium")),
         )
 
     # ── CONFIRMED — execute ──────────────────────────────────────────────────

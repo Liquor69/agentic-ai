@@ -203,7 +203,7 @@ class HealthResponse(BaseModel):
 # ─── POST /accounts/custom ────────────────────────────────────────────────────
 
 class CustomAccountRequest(BaseModel):
-    plan: str = Field(description="'pass' or 'black_card'")
+    plan: str = Field(description="'standard' or 'premium'")
     status: str = Field(description="'active' | 'paused' | 'cancelled' | 'refunded' | 'expired'")
     billing_cycle: str = Field(description="'monthly' or 'annual'")
     last_payment_date: date = Field(description="Date of last payment (YYYY-MM-DD).")

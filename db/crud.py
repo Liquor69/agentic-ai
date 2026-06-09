@@ -606,3 +606,24 @@ def reset_all_demo_account_states(db: Session | None = None) -> None:
         return
     with get_db() as _db:
         _reset_all(_db)
+
+
+def clear_all_logs(db: Session | None = None) -> dict:
+    """
+    Delete all agent logs, sessions, and pending confirmations.
+    Also resets all demo account overrides.
+    Demo use only — called by POST /db/reset.
+    """
+    from db.models import AgentLog, SessionModel, PendingConfirmation
+
+    def _clear(session: Session) -> dict:
+        pending  = session.query(PendingConfirmation).delete(synchronize_session=False)
+        sessions = session.query(SessionModel).delete(synchronize_session=False)
+        logs     = session.query(AgentLog).delete(synchronize_session=False)
+        session.query(DemoAccountState).delete(synchronize_session=False)
+        return {"logs": logs, "sessions": sessions, "pending": pending}
+
+    if db is not None:
+        return _clear(db)
+    with get_db() as _db:
+        return _clear(_db)

@@ -210,7 +210,7 @@ class TestCancelSubscription:
         from datetime import date, timedelta
         mock_acct = AccountState(
             account_id="x",
-            plan="pass",
+            plan="standard",
             status="cancelled",
             billing_cycle="monthly",
             last_payment_date=date.today() - timedelta(days=1),
@@ -307,39 +307,39 @@ class TestChangePlan:
         ))
 
     def test_upgrade_returns_confirmation_with_charge(self):
-        result = self._call("demo-pass-monthly", "black_card", "monthly")
+        result = self._call("demo-pass-monthly", "premium", "monthly")
         assert result.confirmation_required is True
         assert result.change_type == "upgrade"
         assert result.immediate_charge is not None
         assert result.immediate_charge >= 0.0
 
     def test_upgrade_confirmed_succeeds(self):
-        result = self._call("demo-pass-monthly", "black_card", "monthly", confirmed=True)
+        result = self._call("demo-pass-monthly", "premium", "monthly", confirmed=True)
         assert result.success is True
         assert result.change_type == "upgrade"
         assert result.effective_date == date.today().isoformat()
 
     def test_upgrade_guest_pass_impact_noted(self):
-        result = self._call("demo-pass-monthly", "black_card", "monthly")
+        result = self._call("demo-pass-monthly", "premium", "monthly")
         assert "Guest pass issued immediately" in result.guest_pass_impact
 
     def test_downgrade_deferred_no_charge(self):
-        result = self._call("demo-bc-annual", "pass", "monthly")
+        result = self._call("demo-bc-annual", "standard", "monthly")
         assert result.change_type == "downgrade"
         assert result.immediate_charge is None
         # effective date should be subscription_valid_until, not today
         assert result.effective_date != date.today().isoformat()
 
     def test_downgrade_guest_pass_valid_until_period_end(self):
-        result = self._call("demo-bc-annual", "pass", "monthly")
+        result = self._call("demo-bc-annual", "standard", "monthly")
         assert result.effective_date in result.guest_pass_impact
 
     def test_plan_change_during_pause_blocked(self):
-        result = self._call("demo-paused", "pass", "monthly")
+        result = self._call("demo-paused", "standard", "monthly")
         assert result.error.code == "ACCOUNT_PAUSED"
 
     def test_pending_operation_blocked(self):
-        result = self._call("demo-pending", "black_card", "monthly")
+        result = self._call("demo-pending", "premium", "monthly")
         assert result.error.code == "PENDING_OPERATION_ACTIVE"
 
     def test_invalid_plan_name_returns_error(self):
@@ -347,7 +347,7 @@ class TestChangePlan:
         assert result.error.code == "INVALID_PLAN"
 
     def test_invalid_billing_type_returns_error(self):
-        result = self._call("demo-pass-monthly", "black_card", "weekly")
+        result = self._call("demo-pass-monthly", "premium", "weekly")
         assert result.error.code == "INVALID_BILLING_TYPE"
 
 
@@ -462,12 +462,12 @@ class TestStatePersistence:
         from tools.customer_ops import change_plan, PlanChangeInput, _get_account
         r1 = change_plan(PlanChangeInput(
             account_id="demo-pass-monthly", session_id="t",
-            new_plan="black_card", new_billing_type="monthly", confirmed=True,
+            new_plan="premium", new_billing_type="monthly", confirmed=True,
         ))
         assert r1.success is True
         # Now the account should show the new plan
         acct = _get_account("demo-pass-monthly")
-        assert acct.plan == "black_card"
+        assert acct.plan == "premium"
         assert acct.billing_cycle == "monthly"
 
     # ── Reset restores fixture default ────────────────────────────────────────

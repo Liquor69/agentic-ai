@@ -157,7 +157,7 @@ async function applyCustomAccount() {
       c.classList.toggle('selected', c.dataset.id === 'custom');
     });
 
-    const planLabel   = plan === 'black_card' ? 'Black Card' : 'Pass';
+    const planLabel   = plan === 'premium' ? 'Premium' : 'Standard';
     const cycleLabel  = billing.charAt(0).toUpperCase() + billing.slice(1);
     const statusClass = resolvedStatus === 'active'
       ? 'tag-ok'
@@ -182,6 +182,9 @@ async function applyCustomAccount() {
     document.getElementById('custom-form').style.display = 'none';
     document.getElementById('no-account-notice').style.display = 'none';
     statusMsg.textContent = '';
+
+    setAccountHeaderSub('Custom — ' + planLabel + ' · ' + cycleLabel + ' · ' + resolvedStatus);
+    collapseAccountPanel();
   } catch (err) {
     statusMsg.textContent = `Error: ${err.message}`;
   } finally {
@@ -211,6 +214,57 @@ function selectArchetype(archetype) {
   `;
 
   document.getElementById('no-account-notice').style.display = 'none';
+
+  setAccountHeaderSub(archetype.label);
+  collapseAccountPanel();
+}
+
+// ─── Account panel toggle ─────────────────────────────────────────────────────
+function toggleAccountPanel() {
+  const panel   = document.getElementById('account-panel');
+  const chevron = document.getElementById('acct-chevron');
+  const isOpen  = panel.style.display !== 'none';
+  panel.style.display  = isOpen ? 'none' : 'block';
+  chevron.textContent  = isOpen ? '▶' : '▼';
+  chevron.classList.toggle('open', !isOpen);
+}
+
+function collapseAccountPanel() {
+  const panel   = document.getElementById('account-panel');
+  const chevron = document.getElementById('acct-chevron');
+  if (!panel) return;
+  panel.style.display = 'none';
+  chevron.textContent = '▶';
+  chevron.classList.remove('open');
+}
+
+function setAccountHeaderSub(text) {
+  const el = document.getElementById('account-header-sub');
+  if (el) el.textContent = text;
+}
+
+// ─── Database reset ───────────────────────────────────────────────────────────
+async function resetDatabase() {
+  if (!confirm('Reset the demo database?\n\nThis will clear all logs, sessions, and account state overrides. The demo profiles will be restored to their defaults.')) return;
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (API_KEY) headers['X-API-Key'] = API_KEY;
+    const res = await fetch('/db/reset', { method: 'POST', headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    // Reset local state
+    selectedAccountId = null;
+    setAccountHeaderSub('No account selected — click to choose a profile');
+    document.querySelectorAll('.archetype-card').forEach(c => c.classList.remove('selected'));
+    document.getElementById('account-detail').style.display = 'none';
+    document.getElementById('no-account-notice').style.display = 'block';
+    document.getElementById('result-area').style.display    = 'none';
+    document.getElementById('confirm-controls').style.display = 'none';
+    document.getElementById('form-controls').innerHTML      = '';
+    alert(`Demo reset. Cleared: ${d.logs} log${d.logs !== 1 ? 's' : ''}, ${d.sessions} session${d.sessions !== 1 ? 's' : ''}.`);
+  } catch (err) {
+    alert(`Reset failed: ${err.message}`);
+  }
 }
 
 // ─── Phase summary extractors (collapsed header line) ────────────────────────

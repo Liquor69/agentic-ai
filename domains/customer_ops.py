@@ -56,7 +56,7 @@ Multi-tool examples:
 
 Extractable parameters (extract only values explicitly stated — never invent):
 - pause_subscription: start_date (YYYY-MM-DD), duration_days (integer, min 30), end_date (YYYY-MM-DD)
-- change_plan:        new_plan ("pass" or "black_card"), new_billing_type ("monthly" or "annual")
+- change_plan:        new_plan ("standard" or "premium"), new_billing_type ("monthly" or "annual")
 - faq_lookup:         question (exact member question text)
 - policy_query:       question (exact member question text)\
 """,

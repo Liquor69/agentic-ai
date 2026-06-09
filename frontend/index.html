@@ -42,7 +42,12 @@
       width: 100%;
       max-width: 860px;
       margin-bottom: 1.75rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
     }
+
+    header .header-text { flex: 1; }
 
     header h1 {
       font-size: 1.4rem;
@@ -55,6 +60,65 @@
       color: var(--muted);
       margin-top: 0.25rem;
     }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      padding: 0.4rem 0.85rem;
+      white-space: nowrap;
+    }
+    .btn-ghost:hover { background: var(--surface); color: var(--text); }
+
+    /* ── Intro card ── */
+    details.intro-card > summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      list-style: none;
+    }
+    details.intro-card > summary::-webkit-details-marker { display: none; }
+    .intro-summary-title { font-weight: 600; font-size: 0.9rem; }
+    .intro-chevron { color: var(--muted); font-size: 0.72rem; transition: transform 0.2s; }
+    details.intro-card[open] .intro-chevron { transform: rotate(180deg); }
+    .intro-chevron::before { content: '▼'; }
+    .intro-body { margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--border); }
+    .intro-body > p { font-size: 0.87rem; line-height: 1.6; color: var(--text); margin-bottom: 0.85rem; }
+    .policy-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+      gap: 0.65rem;
+      margin-bottom: 0.85rem;
+    }
+    .policy-item { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.85rem; }
+    .policy-item-label { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.3rem; }
+    .policy-item-body { font-size: 0.8rem; line-height: 1.5; color: var(--text); }
+    .intro-instructions {
+      background: rgba(99,102,241,0.07);
+      border: 1px solid rgba(99,102,241,0.18);
+      border-radius: 8px;
+      padding: 0.7rem 1rem;
+      font-size: 0.84rem;
+      line-height: 1.55;
+    }
+
+    /* ── Account panel collapsible ── */
+    .account-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      gap: 0.75rem;
+    }
+    .account-card-header:hover .acct-chevron { color: var(--text); }
+    .acct-chevron { color: var(--muted); font-size: 0.72rem; transition: transform 0.2s; flex-shrink: 0; }
+    .acct-chevron.open { transform: rotate(90deg); }
+    .account-panel-inner { margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--border); }
+    #account-header-sub { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
 
     .card {
       background: var(--surface);
@@ -791,15 +855,55 @@
 <body>
 
 <header>
-  <h1>AI Operations Agent</h1>
-  <p>Natural language → intent classification → tool execution → structured trace</p>
+  <div class="header-text">
+    <h1>AI Operations Agent</h1>
+    <p>Natural language → intent classification → tool execution → structured trace</p>
+  </div>
+  <button class="btn-ghost" onclick="resetDatabase()">↺ Reset Demo</button>
 </header>
 
-<!-- ─── Panel 1: Set Your Account ───────────────────────────────────────────── -->
-<div class="card">
-  <div class="panel-title">Set Your Account</div>
-  <div class="panel-sub">Choose a demo profile — this represents the customer the agent is acting on.</div>
+<!-- ─── Intro ─────────────────────────────────────────────────────────────────── -->
+<details class="card intro-card">
+  <summary>
+    <span class="intro-summary-title">About this demo</span>
+    <span class="intro-chevron"></span>
+  </summary>
+  <div class="intro-body">
+    <p>This is a demo support site for a company named <strong>Fitness World</strong> (which will be adjusted to your business name). This company operates the following customer policy:</p>
+    <div class="policy-grid">
+      <div class="policy-item">
+        <div class="policy-item-label">Plans</div>
+        <div class="policy-item-body"><strong>Standard</strong> — €60/mo · €600/yr<br><strong>Premium</strong> — €120/mo · €1,200/yr<br><em>Includes guest pass</em></div>
+      </div>
+      <div class="policy-item">
+        <div class="policy-item-label">Refunds</div>
+        <div class="policy-item-body">Available within <strong>14 days</strong> of purchase. One refund per account lifetime — further requests are escalated to the support team.</div>
+      </div>
+      <div class="policy-item">
+        <div class="policy-item-label">Membership Pause</div>
+        <div class="policy-item-body">Min <strong>30 days</strong>. Fee: €10 per 30-day period. Up to 3 months self-serve. 4–6 months require manual approval. 7+ months are denied.</div>
+      </div>
+      <div class="policy-item">
+        <div class="policy-item-label">Plan Changes</div>
+        <div class="policy-item-body">Upgrade or downgrade between Standard and Premium at any time. Prorated billing applies automatically.</div>
+      </div>
+    </div>
+    <p class="intro-instructions">To use the demo, open <strong>Set Your Account</strong> below and choose a profile — each card shows which conditions apply (refund eligibility, pending operations, etc.). Then type a request as that customer in the <strong>Customer Experience</strong> panel and watch the agent classify, plan, and act according to the policy above.</p>
+  </div>
+</details>
 
+<!-- ─── Panel 1: Set Your Account ───────────────────────────────────────────── -->
+<div class="card" id="account-card">
+  <div class="account-card-header" onclick="toggleAccountPanel()">
+    <div>
+      <div class="panel-title" style="margin:0">Set Your Account</div>
+      <div id="account-header-sub">No account selected — click to choose a profile</div>
+    </div>
+    <span class="acct-chevron" id="acct-chevron">▶</span>
+  </div>
+
+  <div id="account-panel" style="display:none">
+  <div class="account-panel-inner">
   <div class="archetype-grid" id="archetype-grid">
     <div style="color:var(--muted);font-size:0.82rem">Loading profiles…</div>
   </div>
@@ -810,8 +914,8 @@
       <div class="cf-field">
         <span class="cf-label">Plan</span>
         <select id="cf-plan">
-          <option value="pass">Pass</option>
-          <option value="black_card">Black Card</option>
+          <option value="standard">Standard</option>
+          <option value="premium">Premium</option>
         </select>
       </div>
       <div class="cf-field">
@@ -851,8 +955,10 @@
     </div>
   </div>
 
-  <div id="account-detail"></div>
-</div>
+    <div id="account-detail"></div>
+  </div><!-- /account-panel-inner -->
+  </div><!-- /account-panel -->
+</div><!-- /account-card -->
 
 <!-- ─── Panel 2: Customer Experience ────────────────────────────────────────── -->
 <div class="card">
@@ -912,6 +1018,6 @@
   </div>
 </div>
 
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

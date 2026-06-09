@@ -266,8 +266,8 @@ _FORM_SPECS: dict[str, dict[str, Any]] = {
                 "type": "select",
                 "required": True,
                 "options": [
-                    {"value": "pass", "label": "Pass — €60/month · €600/year"},
-                    {"value": "black_card", "label": "Black Card — €120/month · €1,200/year"},
+                    {"value": "standard", "label": "Standard — €60/month · €600/year"},
+                    {"value": "premium",  "label": "Premium — €120/month · €1,200/year"},
                 ],
             },
             {

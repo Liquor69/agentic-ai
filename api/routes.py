@@ -215,6 +215,16 @@ async def reset_account(account_id: str) -> dict:
 
 # ─── POST /accounts/reset ────────────────────────────────────────────────────
 
+@router.post("/db/reset")
+async def reset_database() -> dict:
+    """
+    Clear all agent logs, sessions, pending confirmations, and demo account overrides.
+    Demo use only — called by the Reset Database button in the UI.
+    """
+    result = crud.clear_all_logs()
+    return {"reset": True, **result}
+
+
 @router.post("/accounts/reset")
 async def reset_all_accounts() -> dict:
     """
