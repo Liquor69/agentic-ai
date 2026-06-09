@@ -120,6 +120,54 @@
     .account-panel-inner { margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--border); }
     #account-header-sub { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
 
+    /* ── Action grid (inside intro card) ── */
+    .intro-section-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 1rem 0 0.55rem;
+    }
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.65rem;
+      margin-bottom: 0.85rem;
+    }
+    .action-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 0.9rem;
+    }
+    .action-item-name {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.3rem;
+    }
+    .action-item-example {
+      font-size: 0.78rem;
+      font-style: italic;
+      color: var(--accent);
+      margin-bottom: 0.4rem;
+      line-height: 1.4;
+    }
+    .action-item-note {
+      font-size: 0.76rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .intro-steps {
+      margin: 0;
+      padding-left: 1.25rem;
+      font-size: 0.84rem;
+      line-height: 1.7;
+      color: var(--text);
+    }
+    .intro-steps li { margin-bottom: 0.1rem; }
+
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -869,26 +917,66 @@
     <span class="intro-chevron"></span>
   </summary>
   <div class="intro-body">
-    <p>This is a demo support site for a company named <strong>Fitness World</strong> (which will be adjusted to your business name). This company operates the following customer policy:</p>
+    <p>This is a demo support site for a company named <strong>Fitness World</strong> (adjust the name to your business). The AI agent handles member requests in natural language — no menus, no forms — and enforces the company's rules automatically. The policy it operates under:</p>
+
+    <div class="intro-section-label">Company policy</div>
     <div class="policy-grid">
       <div class="policy-item">
         <div class="policy-item-label">Plans</div>
-        <div class="policy-item-body"><strong>Standard</strong> — €60/mo · €600/yr<br><strong>Premium</strong> — €120/mo · €1,200/yr<br><em>Includes guest pass</em></div>
+        <div class="policy-item-body"><strong>Standard</strong> — €60/mo · €600/yr<br><strong>Premium</strong> — €120/mo · €1,200/yr<br><em>Premium includes a guest pass</em></div>
       </div>
       <div class="policy-item">
         <div class="policy-item-label">Refunds</div>
-        <div class="policy-item-body">Available within <strong>14 days</strong> of purchase. One refund per account lifetime — further requests are escalated to the support team.</div>
+        <div class="policy-item-body">Within <strong>14 days</strong> of purchase only. <strong>One per account lifetime</strong> — a second request is automatically escalated to the support team.</div>
       </div>
       <div class="policy-item">
         <div class="policy-item-label">Membership Pause</div>
-        <div class="policy-item-body">Min <strong>30 days</strong>. Fee: €10 per 30-day period. Up to 3 months self-serve. 4–6 months require manual approval. 7+ months are denied.</div>
+        <div class="policy-item-body">Minimum <strong>30 days</strong>. Fee: €10/30-day period. Up to 3 months: self-serve. 4–6 months: manual approval required. 7+ months: denied.</div>
       </div>
       <div class="policy-item">
         <div class="policy-item-label">Plan Changes</div>
-        <div class="policy-item-body">Upgrade or downgrade between Standard and Premium at any time. Prorated billing applies automatically.</div>
+        <div class="policy-item-body">Upgrade or downgrade at any time. Prorated charge or credit calculated automatically.</div>
       </div>
     </div>
-    <p class="intro-instructions">To use the demo, open <strong>Set Your Account</strong> below and choose a profile — each card shows which conditions apply (refund eligibility, pending operations, etc.). Then type a request as that customer in the <strong>Customer Experience</strong> panel and watch the agent classify, plan, and act according to the policy above.</p>
+
+    <div class="intro-section-label">What you can ask the agent</div>
+    <div class="action-grid">
+      <div class="action-item">
+        <div class="action-item-name">Ask a question</div>
+        <div class="action-item-example">"What's included in the Premium plan?"<br>"How do pauses work?"</div>
+        <div class="action-item-note">The agent looks up the FAQ or interprets policy to give a plain-English answer. No account changes are made.</div>
+      </div>
+      <div class="action-item">
+        <div class="action-item-name">Request a refund</div>
+        <div class="action-item-example">"I'd like a refund on my last payment."</div>
+        <div class="action-item-note">Checks the 14-day window and refund history. Approves, rejects, or escalates based on the profile you selected — try profiles with and without prior refunds to see both outcomes.</div>
+      </div>
+      <div class="action-item">
+        <div class="action-item-name">Pause your membership</div>
+        <div class="action-item-example">"Pause my membership for 6 weeks starting July 1st."</div>
+        <div class="action-item-note">Calculates the pause fee, checks the notice period, and pauses the account — or escalates if the duration falls in the manual-approval range.</div>
+      </div>
+      <div class="action-item">
+        <div class="action-item-name">Cancel your membership</div>
+        <div class="action-item-example">"Please cancel my subscription."</div>
+        <div class="action-item-note">Asks for your confirmation before acting — this demonstrates the agent's safety step for irreversible actions. Say YES or NO in the prompt that appears.</div>
+      </div>
+      <div class="action-item">
+        <div class="action-item-name">Change your plan</div>
+        <div class="action-item-example">"Switch me to Premium, billed annually."</div>
+        <div class="action-item-note">Upgrades or downgrades the account and shows the prorated amount charged or credited.</div>
+      </div>
+    </div>
+
+    <div class="intro-section-label">How to use this demo</div>
+    <div class="intro-instructions">
+      <ol class="intro-steps">
+        <li>Open <strong>Set Your Account</strong> and pick a profile. Each profile simulates a real customer situation — the tags on each card (e.g. "Refund eligible", "No refund", "Currently paused") tell you what conditions apply.</li>
+        <li>Type a request in plain English in the <strong>Customer Experience</strong> panel, as if you are that customer. You don't need to use any specific wording — the agent figures out the intent.</li>
+        <li>Read the <strong>Decision Trace</strong> that appears below the response. Each step shows what the agent did: how it interpreted the request, which action it chose, which policy rules it checked, and what it executed.</li>
+        <li>Try the same request with different profiles to see how the outcome changes based on account state.</li>
+      </ol>
+    </div>
   </div>
 </details>
 
@@ -1018,6 +1106,6 @@
   </div>
 </div>
 
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>
