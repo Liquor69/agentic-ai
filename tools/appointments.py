@@ -525,7 +525,7 @@ def check_availability(input: CheckAvailabilityInput) -> AvailabilityResult:
     today = date.today()
 
     def _fmt(d: date) -> str:
-        return f"{d.strftime('%A, %d %B')} ({d.isoformat()})"
+        return d.strftime("%A, %d %B").replace(" 0", " ")
 
     if input.date_range_start:
         try:
@@ -551,10 +551,10 @@ def check_availability(input: CheckAvailabilityInput) -> AvailabilityResult:
             has_more = total > MAX_SLOT_SUGGESTIONS
             dates_out = [d.isoformat() for d in capped]
             summary = ", ".join(_fmt(d) for d in capped)
-            msg = f"Available (full-day bookings, no specific time): {summary}."
+            msg = f"We have availability on: {summary}."
             if has_more:
                 remaining = total - MAX_SLOT_SUGGESTIONS
-                msg += f" ({remaining} more day{'s' if remaining > 1 else ''} available in this range.)"
+                msg += f" There {'are' if remaining > 1 else 'is'} {remaining} more day{'s' if remaining > 1 else ''} open in this period too."
             return AvailabilityResult(
                 available_dates=dates_out,
                 message=msg,
@@ -565,18 +565,18 @@ def check_availability(input: CheckAvailabilityInput) -> AvailabilityResult:
 
         # Nothing in range — find nearest outside
         range_str = (
-            f"{date_range_start.strftime('%d %B')}–{date_range_end.strftime('%d %B')}"
+            f"{date_range_start.strftime('%d %B').replace(' 0', ' ')}–{date_range_end.strftime('%d %B').replace(' 0', ' ')}"
             if date_range_start != date_range_end
-            else date_range_start.strftime("%A, %d %B")
+            else date_range_start.strftime("%A, %d %B").replace(" 0", " ")
         )
         nearest = _nearest_outside_range(date_range_start, date_range_end)
         dates_out = [d.isoformat() for d in nearest]
 
         if nearest:
             alts = " or ".join(_fmt(d) for d in nearest)
-            msg = f"No availability {range_str}. Nearest available: {alts}."
+            msg = f"Sorry, we're fully booked from {range_str}. The nearest available date is {alts} — would you like to book that?"
         else:
-            msg = f"No availability {range_str} or nearby. Please contact us directly."
+            msg = f"Sorry, we don't have any openings around {range_str}. Please contact us directly and we'll find something that works."
 
         return AvailabilityResult(
             available_dates=dates_out,
@@ -599,9 +599,9 @@ def check_availability(input: CheckAvailabilityInput) -> AvailabilityResult:
 
     if available_:
         summary = ", ".join(_fmt(d) for d in available_)
-        msg = f"Next available days (full-day bookings, no specific time) — {summary}."
+        msg = f"Here are our next available dates: {summary}. Which would you prefer?"
     else:
-        msg = "No availability in the next two weeks. Please contact us directly."
+        msg = "Sorry, we have no openings in the next two weeks. Please contact us directly and we'll sort something out."
 
     return AvailabilityResult(
         available_dates=dates_out,
