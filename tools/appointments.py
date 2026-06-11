@@ -507,7 +507,7 @@ class CancelResult(BaseModel):
 
 @register_tool
 def appointment_faq(input: AppointmentFAQInput) -> FAQResult:
-    """Answer questions about services, pricing, and booking policies."""
+    """Answer an EXPLICIT client question about services, pricing, or policies. Use ONLY when the client is asking a question — never alongside a booking or scheduling intent."""
     resp = llm_call(
         messages=[{"role": "user", "content": input.question}],
         system=_FAQ_SYSTEM,

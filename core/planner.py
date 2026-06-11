@@ -122,7 +122,9 @@ CRITICAL RULES:
 1. Select based on INTENT only. Missing parameters are NOT a reason to use "clarify".
    The system will automatically prompt the user for any missing parameters via a form.
 2. If the request covers multiple distinct intents, include ALL required tools in the tools array.
-3. Only use "clarify" (as the sole entry) when the ENTIRE request is genuinely unclear.\
+3. Only use "clarify" (as the sole entry) when the ENTIRE request is genuinely unclear.
+4. NEVER add an FAQ or informational tool alongside a booking/action intent. Action tools
+   handle incomplete information internally. Adding FAQ tools to "help" the user is wrong.\
 """
 
 _SELECTION_SYSTEM_SUFFIX = """\
