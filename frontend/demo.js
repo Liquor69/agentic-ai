@@ -437,7 +437,7 @@ async function handleRun() {
     replaceLoadingWithResponse(data);
     if (data.halt_reason === "success") updateCalendarFromTrace(data.trace ?? []);
   } catch (err) {
-    replaceLoadingWithResponse({ result: `Request failed: ${err.message}`, halt_reason: "error", trace: [] });
+    replaceLoadingWithResponse({ result: "Sorry, I couldn't reach the server. Please try again in a moment.", halt_reason: "error", trace: [] });
   } finally {
     setLoading(false);
   }
@@ -459,7 +459,7 @@ async function sendConfirm(confirmed) {
     replaceLoadingWithResponse(data);
     if (data.halt_reason === "success") updateCalendarFromTrace(data.trace ?? []);
   } catch (err) {
-    replaceLoadingWithResponse({ result: `Request failed: ${err.message}`, halt_reason: "error", trace: [] });
+    replaceLoadingWithResponse({ result: "Sorry, I couldn't reach the server. Please try again in a moment.", halt_reason: "error", trace: [] });
   } finally {
     setLoading(false);
   }
