@@ -61,6 +61,7 @@ async def run(request: RunRequest) -> RunResponse:
             account_id=request.account_id,
             form_data=request.form_data,
             dry_run=request.dry_run,
+            domain=request.domain,
         )
     except Exception as exc:
         logging.getLogger(__name__).exception("Unhandled exception in /run route")
@@ -183,7 +184,11 @@ async def health() -> HealthResponse:
 
 @router.get("/accounts")
 async def get_accounts() -> list[dict]:
-    """List demo account archetypes for the Set Your Account panel."""
+    """List demo archetypes for the active domain."""
+    domain = settings.domain_pack
+    if domain == "appointments":
+        from tools.appointments import ARCHETYPES
+        return ARCHETYPES
     from tools.customer_ops import ARCHETYPES
     return ARCHETYPES
 
@@ -218,11 +223,32 @@ async def reset_account(account_id: str) -> dict:
 @router.post("/db/reset")
 async def reset_database() -> dict:
     """
-    Clear all agent logs, sessions, pending confirmations, and demo account overrides.
-    Demo use only — called by the Reset Database button in the UI.
+    Clear all agent logs, sessions, pending confirmations, demo account overrides,
+    and manually blocked dates. Demo use only — called by the Reset button in the UI.
     """
+    from tools.appointments import clear_manual_busy_dates
+    clear_manual_busy_dates()
     result = crud.clear_all_logs()
     return {"reset": True, **result}
+
+
+@router.post("/db/busy-dates")
+async def set_busy_dates(body: dict) -> dict:
+    """
+    Replace the set of manually blocked dates used by availability checks.
+    Accepts {"dates": ["YYYY-MM-DD", ...]}. Demo use only.
+    """
+    from tools.appointments import set_manual_busy_dates
+    dates: list[str] = body.get("dates", [])
+    set_manual_busy_dates(dates)
+    return {"set": True, "count": len(dates)}
+
+
+@router.get("/appointments")
+async def get_appointments() -> list[dict]:
+    """Return all currently active appointments for calendar display."""
+    from tools.appointments import get_scheduled_appointments
+    return get_scheduled_appointments()
 
 
 @router.post("/accounts/reset")

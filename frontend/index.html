@@ -1,1148 +1,337 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Operations Agent</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Appointment Assistant — AI Operations Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #0f1117;
-      --surface:   #1a1d27;
-      --border:    #2a2d3a;
-      --accent:    #6366f1;
-      --accent-dim:#4f46e5;
-      --accent-bg: rgba(99, 102, 241, 0.08);
-      --text:      #e2e8f0;
-      --muted:     #64748b;
-      --success:   #22c55e;
-      --error:     #ef4444;
-      --warn:      #f59e0b;
-
-      --phase-perceive: #818cf8;
-      --phase-plan:     #34d399;
-      --phase-act:      #f59e0b;
-      --phase-observe:  #60a5fa;
-      --phase-log:      #a78bfa;
+      --bg: #ffffff;
+      --bg-alt: #f8fafc;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --text-light: #94a3b8;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-light: #eff6ff;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
     }
 
     body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem 1rem 3rem;
-    }
-
-    header {
-      width: 100%;
-      max-width: 860px;
-      margin-bottom: 1.75rem;
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-
-    header .header-text { flex: 1; }
-
-    header h1 {
-      font-size: 1.4rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-    }
-
-    header p {
-      font-size: 0.85rem;
-      color: var(--muted);
-      margin-top: 0.25rem;
-    }
-
-    .btn-ghost {
-      background: transparent;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--muted);
-      font-size: 0.78rem;
-      padding: 0.4rem 0.85rem;
-      white-space: nowrap;
-    }
-    .btn-ghost:hover { background: var(--surface); color: var(--text); }
-
-    /* ── Intro card ── */
-    details.intro-card > summary {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-      list-style: none;
-    }
-    details.intro-card > summary::-webkit-details-marker { display: none; }
-    .intro-summary-title { font-weight: 600; font-size: 0.9rem; }
-    .intro-chevron { color: var(--muted); font-size: 0.72rem; transition: transform 0.2s; }
-    details.intro-card[open] .intro-chevron { transform: rotate(180deg); }
-    .intro-chevron::before { content: '▼'; }
-    .intro-body { margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--border); }
-    .intro-body > p { font-size: 0.87rem; line-height: 1.6; color: var(--text); margin-bottom: 0.85rem; }
-    .policy-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
-      gap: 0.65rem;
-      margin-bottom: 0.85rem;
-    }
-    .policy-item { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.85rem; }
-    .policy-item-label { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.3rem; }
-    .policy-item-body { font-size: 0.8rem; line-height: 1.5; color: var(--text); }
-    .intro-instructions {
-      background: rgba(99,102,241,0.07);
-      border: 1px solid rgba(99,102,241,0.18);
-      border-radius: 8px;
-      padding: 0.7rem 1rem;
-      font-size: 0.84rem;
-      line-height: 1.55;
-    }
-
-    /* ── Account panel collapsible ── */
-    .account-card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-      user-select: none;
-      gap: 0.75rem;
-    }
-    .account-card-header:hover .acct-chevron { color: var(--text); }
-    .acct-chevron { color: var(--muted); font-size: 0.72rem; transition: transform 0.2s; flex-shrink: 0; }
-    .acct-chevron.open { transform: rotate(90deg); }
-    .account-panel-inner { margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--border); }
-    #account-header-sub { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
-
-    /* ── Action grid (inside intro card) ── */
-    .intro-section-label {
-      font-size: 0.68rem;
-      font-weight: 600;
-      letter-spacing: 0.07em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin: 1rem 0 0.55rem;
-    }
-    .action-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 0.65rem;
-      margin-bottom: 0.85rem;
-    }
-    .action-item {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.75rem 0.9rem;
-    }
-    .action-item-name {
-      font-size: 0.82rem;
-      font-weight: 600;
-      color: var(--text);
-      margin-bottom: 0.3rem;
-    }
-    .action-item-example {
-      font-size: 0.78rem;
-      font-style: italic;
-      color: var(--accent);
-      margin-bottom: 0.4rem;
-      line-height: 1.4;
-    }
-    .action-item-note {
-      font-size: 0.76rem;
-      color: var(--muted);
-      line-height: 1.45;
-    }
-    .intro-steps {
-      margin: 0;
-      padding-left: 1.25rem;
-      font-size: 0.84rem;
-      line-height: 1.7;
-      color: var(--text);
-    }
-    .intro-steps li { margin-bottom: 0.1rem; }
-
-    /* ── Pitch card accent ── */
-    .intro-card-pitch { border-color: rgba(99,102,241,0.35); }
-    .intro-card-pitch > summary .intro-summary-title { color: var(--accent); }
-
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.5rem;
-      width: 100%;
-      max-width: 860px;
-    }
-
-    .card + .card { margin-top: 1rem; }
-
-    /* ── Section label ── */
-    .section-label {
-      font-size: 0.72rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 0.6rem;
-    }
-
-    .panel-title {
-      font-size: 1rem;
-      font-weight: 600;
-      margin-bottom: 0.25rem;
-    }
-
-    .panel-sub {
-      font-size: 0.8rem;
-      color: var(--muted);
-      margin-bottom: 1.1rem;
-    }
-
-    /* ── Archetype grid ── */
-    .archetype-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-      gap: 0.6rem;
-    }
-
-    .archetype-card {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      cursor: pointer;
-      padding: 0.75rem 0.9rem;
-      transition: border-color 0.15s, background 0.15s;
-      user-select: none;
-    }
-
-    .archetype-card:hover {
-      border-color: var(--accent);
-    }
-
-    .archetype-card.selected {
-      border-color: var(--accent);
-      background: var(--accent-bg);
-    }
-
-    .archetype-card-label {
-      font-size: 0.85rem;
-      font-weight: 600;
-      margin-bottom: 0.4rem;
-    }
-
-    .archetype-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.3rem;
-      margin-bottom: 0.45rem;
-    }
-
-    .tag {
-      background: #1e2133;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      font-size: 0.67rem;
-      font-weight: 500;
-      letter-spacing: 0.03em;
-      padding: 0.15rem 0.4rem;
-      color: var(--muted);
-    }
-
-    .tag-warn  { border-color: #78350f; color: var(--warn); background: #1c1104; }
-    .tag-error { border-color: #7f1d1d; color: var(--error); background: #1c0606; }
-    .tag-ok    { border-color: #14532d; color: var(--success); background: #051a0d; }
-    .tag-info  { border-color: #1e3a5f; color: #60a5fa; background: #070f1e; }
-
-    .archetype-desc {
-      font-size: 0.76rem;
-      color: var(--muted);
-      line-height: 1.45;
-    }
-
-    /* ── Account detail strip ── */
-    #account-detail {
-      margin-top: 0.9rem;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.75rem 1rem;
-      font-size: 0.8rem;
-      display: none;
-    }
-
-    #account-detail .detail-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.4rem 1rem;
-      color: var(--muted);
-    }
-
-    #account-detail .detail-id {
-      font-family: 'Cascadia Code', 'Fira Code', monospace;
-      font-size: 0.75rem;
-      color: var(--accent);
-      margin-bottom: 0.4rem;
-    }
-
-    /* ── Custom account form ── */
-    #custom-form {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1rem 1rem 0.75rem;
-      margin-top: 0.75rem;
-    }
-
-    .cf-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
-      gap: 0.65rem;
-    }
-
-    .cf-field {
-      display: flex;
-      flex-direction: column;
-      gap: 0.3rem;
-    }
-
-    .cf-label {
-      font-size: 0.7rem;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
-    select, input[type="date"], input[type="number"] {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
-      font-size: 0.84rem;
-      padding: 0.45rem 0.65rem;
-      outline: none;
-      width: 100%;
-      color-scheme: dark;
-    }
-
-    select:focus, input[type="date"]:focus, input[type="number"]:focus { border-color: var(--accent); }
-
-    .cf-checks {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1.25rem;
-      margin-top: 0.65rem;
-      align-items: center;
-    }
-
-    .cf-check-label {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      font-size: 0.82rem;
-      color: var(--text);
-      cursor: pointer;
-      user-select: none;
-    }
-
-    input[type="checkbox"] {
-      accent-color: var(--accent);
-      cursor: pointer;
-      height: 14px;
-      width: 14px;
-    }
-
-    .cf-footer {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-top: 0.75rem;
-    }
-
-    #cf-status-msg {
-      font-size: 0.78rem;
-      color: var(--muted);
-    }
-
-    /* ── Input area ── */
-    input[type="text"], textarea {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-size: 0.9rem;
-      padding: 0.6rem 0.9rem;
-      outline: none;
-      transition: border-color 0.15s;
-      width: 100%;
-    }
-
-    input[type="text"]:focus, textarea:focus {
-      border-color: var(--accent);
-    }
-
-    textarea { resize: vertical; min-height: 72px; font-family: inherit; }
-
-    #session-input { font-size: 0.8rem; color: var(--muted); }
-    #session-input::placeholder { color: var(--muted); }
-
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-    }
-
-    label.toggle {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      font-size: 0.8rem;
-      color: var(--muted);
-      cursor: pointer;
-      user-select: none;
-    }
-
-    button {
-      background: var(--accent);
-      border: none;
-      border-radius: 8px;
-      color: #fff;
-      cursor: pointer;
-      font-size: 0.9rem;
-      font-weight: 500;
-      padding: 0.6rem 1.4rem;
-      transition: background 0.15s;
-      white-space: nowrap;
-    }
-
-    button:hover { background: var(--accent-dim); }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
-
-    /* ── No-account notice ── */
-    #no-account-notice {
-      background: #1a1408;
-      border: 1px solid #78350f;
-      border-radius: 8px;
-      color: var(--warn);
-      font-size: 0.82rem;
-      padding: 0.6rem 0.9rem;
-      margin-bottom: 0.75rem;
-      display: none;
-    }
-
-    /* ── Result area ── */
-    #result-area { margin-top: 1.5rem; display: none; }
-
-    .result-header {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
-      font-size: 0.78rem;
-      color: var(--muted);
-    }
-
-    .badge {
-      border-radius: 4px;
-      font-size: 0.72rem;
-      font-weight: 600;
-      padding: 0.15rem 0.5rem;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-
-    .badge-success { background: #14532d; color: var(--success); }
-    .badge-error   { background: #450a0a; color: var(--error);   }
-    .badge-warn    { background: #451a03; color: var(--warn);    }
-
-    #response-text {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 0.95rem;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 16px;
       line-height: 1.6;
-      padding: 1rem 1.1rem;
-      white-space: pre-wrap;
-      margin-bottom: 1.25rem;
-    }
-
-    /* ── Trace ── */
-    .trace-steps { display: flex; flex-direction: column; gap: 0.5rem; }
-
-    .trace-step {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .trace-step summary {
-      align-items: center;
-      cursor: pointer;
-      display: flex;
-      gap: 0.6rem;
-      list-style: none;
-      padding: 0.55rem 0.9rem;
-      font-size: 0.84rem;
-      user-select: none;
-    }
-
-    .trace-step summary::-webkit-details-marker { display: none; }
-
-    .phase-dot {
-      border-radius: 50%;
-      flex-shrink: 0;
-      height: 8px;
-      width: 8px;
-    }
-
-    .phase-perceive .phase-dot { background: var(--phase-perceive); }
-    .phase-plan     .phase-dot { background: var(--phase-plan); }
-    .phase-act      .phase-dot { background: var(--phase-act); }
-    .phase-observe  .phase-dot { background: var(--phase-observe); }
-    .phase-log      .phase-dot { background: var(--phase-log); }
-
-    .trace-step summary .phase-name {
-      font-weight: 600;
-      min-width: 70px;
-      text-transform: capitalize;
-    }
-
-    .trace-step summary .phase-summary {
-      color: var(--muted);
-      font-size: 0.8rem;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .trace-step-body {
-      background: var(--bg);
-      border-top: 1px solid var(--border);
-      padding: 0.85rem 1rem 0.75rem;
-    }
-
-    .trace-narrative {
-      font-size: 0.88rem;
-      line-height: 1.55;
-      margin-bottom: 0.6rem;
-    }
-
-    .trace-kv-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.28rem;
-      margin-bottom: 0.6rem;
-    }
-
-    .trace-kv {
-      display: flex;
-      gap: 0.75rem;
-      font-size: 0.81rem;
-      line-height: 1.4;
-    }
-
-    .trace-kv-key {
-      color: var(--muted);
-      min-width: 100px;
-      flex-shrink: 0;
-    }
-
-    .trace-kv-val { color: var(--text); }
-
-    .trace-section-label {
-      font-size: 0.68rem;
-      font-weight: 600;
-      letter-spacing: 0.07em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin: 0.55rem 0 0.28rem;
-    }
-
-    .trace-chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.3rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .trace-chip {
-      border-radius: 4px;
-      font-size: 0.72rem;
-      font-weight: 500;
-      padding: 0.18rem 0.48rem;
-      background: var(--surface);
-      border: 1px solid var(--border);
       color: var(--text);
-    }
-
-    .trace-chip-ok    { background: #051a0d; border-color: #14532d; color: var(--success); }
-    .trace-chip-warn  { background: #1c1104; border-color: #78350f; color: var(--warn); }
-    .trace-chip-error { background: #1c0606; border-color: #7f1d1d; color: var(--error); }
-    .trace-chip-info  { background: #070f1e; border-color: #1e3a5f; color: #60a5fa; }
-
-    .trace-changes-list {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 0.22rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .trace-changes-list li {
-      font-size: 0.82rem;
-      color: var(--text);
-      padding-left: 1rem;
-      position: relative;
-      line-height: 1.4;
-    }
-
-    .trace-changes-list li::before {
-      content: '→';
-      position: absolute;
-      left: 0;
-      color: var(--success);
-      font-size: 0.75rem;
-    }
-
-    .trace-raw-toggle {
-      margin-top: 0.6rem;
-      padding-top: 0.5rem;
-      border-top: 1px solid var(--border);
-    }
-
-    .trace-raw-toggle > summary {
-      color: var(--muted);
-      cursor: pointer;
-      font-size: 0.72rem;
-      list-style: none;
-      user-select: none;
-    }
-    .trace-raw-toggle > summary::-webkit-details-marker { display: none; }
-    .trace-raw-toggle > summary::before { content: '▶  Raw data'; font-size: 0.65rem; }
-    .trace-raw-toggle[open] > summary::before { content: '▼  Raw data'; }
-
-    .trace-raw-body {
-      background: var(--surface);
-      border-radius: 5px;
-      font-family: 'Cascadia Code', 'Fira Code', monospace;
-      font-size: 0.72rem;
-      line-height: 1.45;
-      margin-top: 0.4rem;
-      max-height: 280px;
-      overflow: auto;
-      padding: 0.55rem 0.75rem;
-      white-space: pre;
-      color: var(--muted);
-    }
-
-    .step-num {
-      align-items: center;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 50%;
-      color: var(--muted);
-      display: flex;
-      flex-shrink: 0;
-      font-size: 0.65rem;
-      font-weight: 600;
-      height: 17px;
-      justify-content: center;
-      width: 17px;
-    }
-
-    /* ── Raw JSON ── */
-    details.raw-json { margin-top: 1rem; }
-
-    details.raw-json > summary {
-      color: var(--muted);
-      cursor: pointer;
-      font-size: 0.78rem;
-      list-style: none;
-      user-select: none;
-    }
-    details.raw-json > summary::-webkit-details-marker { display: none; }
-    details.raw-json > summary::before { content: '▶ '; font-size: 0.65rem; }
-    details.raw-json[open] > summary::before { content: '▼ '; }
-
-    .raw-json-body {
       background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-family: 'Cascadia Code', 'Fira Code', monospace;
-      font-size: 0.75rem;
-      line-height: 1.5;
-      margin-top: 0.5rem;
-      max-height: 400px;
-      overflow: auto;
-      padding: 0.75rem 1rem;
-      white-space: pre;
     }
 
-    /* ── Error block ── */
-    #error-block {
-      background: #1c0a0a;
-      border: 1px solid #7f1d1d;
-      border-radius: 8px;
-      padding: 1rem;
-      margin-top: 1rem;
-      display: none;
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 24px;
     }
 
-    #error-message { color: var(--error); font-size: 0.9rem; margin-bottom: 0.5rem; }
+    section { padding: 64px 0; }
+    section:nth-child(even) { background: var(--bg-alt); }
 
-    /* ── Spinner ── */
-    .spinner {
-      animation: spin 0.7s linear infinite;
-      border: 2px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
+    h1 {
+      font-size: clamp(28px, 5vw, 40px);
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+
+    h2 {
+      font-size: clamp(20px, 3vw, 26px);
+      font-weight: 600;
+      line-height: 1.3;
+      margin-bottom: 20px;
+    }
+
+    h3 {
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    p { color: var(--text-muted); margin-bottom: 16px; }
+    p:last-child { margin-bottom: 0; }
+
+    .btn {
       display: inline-block;
-      height: 14px;
-      width: 14px;
-    }
-
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    #status { font-size: 0.8rem; color: var(--muted); display: flex; align-items: center; gap: 0.5rem; }
-
-    /* ── Form controls ── */
-    #form-controls {
-      display: none;
-      background: #0a1120;
-      border: 1px solid #1e3a5f;
-      border-radius: 8px;
-      padding: 1rem 1.1rem 0.85rem;
-      margin-bottom: 1rem;
-    }
-
-    #form-controls .form-controls-title {
-      font-size: 0.72rem;
+      padding: 12px 24px;
+      border-radius: var(--radius);
+      font-size: 15px;
       font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #60a5fa;
-      margin-bottom: 0.85rem;
-    }
-
-    .form-fields-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-      gap: 0.7rem;
-    }
-
-    .form-field-row {
-      display: flex;
-      flex-direction: column;
-      gap: 0.3rem;
-    }
-
-    .form-field-row.full-width { grid-column: 1 / -1; }
-
-    .form-field-label {
-      font-size: 0.7rem;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
-    .form-field-hint {
-      font-size: 0.71rem;
-      color: var(--muted);
-      opacity: 0.75;
-      line-height: 1.4;
-    }
-
-    .field-locked {
-      opacity: 0.6;
-      cursor: not-allowed !important;
-      pointer-events: none;
-      border-color: #1e3a5f !important;
-      color: #60a5fa !important;
-    }
-
-    .form-footer {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-top: 1rem;
-      padding-top: 0.85rem;
-      border-top: 1px solid var(--border);
-      flex-wrap: wrap;
-    }
-
-    #form-cancel-btn {
-      background: var(--surface);
-      color: var(--text);
-      border: 1px solid var(--border);
-      padding: 0.5rem 1.1rem;
-      font-size: 0.85rem;
-    }
-
-    #form-cancel-btn:hover { background: var(--border); }
-
-    #form-submit-btn {
-      background: #15803d;
-      padding: 0.5rem 1.2rem;
-      font-size: 0.85rem;
-    }
-
-    #form-submit-btn:hover { background: #166534; }
-
-    #form-error-msg {
-      font-size: 0.78rem;
-      color: var(--error);
-    }
-
-    /* ── Pause live preview ── */
-    .pause-preview {
-      margin-top: 1rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--border);
-    }
-
-    .pause-preview-header {
-      font-size: 0.72rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #60a5fa;
-      margin-bottom: 0.6rem;
-    }
-
-    .pause-changes-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 0.75rem;
-    }
-
-    .pause-changes-table td {
-      padding: 0.28rem 0;
-      vertical-align: top;
-      font-size: 0.82rem;
-      line-height: 1.4;
-    }
-
-    .pause-changes-table td:first-child {
-      color: var(--muted);
-      min-width: 130px;
-      padding-right: 1.25rem;
+      text-decoration: none;
+      transition: background 0.15s, transform 0.1s;
       white-space: nowrap;
     }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: var(--bg); color: var(--accent); border: 1.5px solid var(--accent); }
+    .btn-secondary:hover { background: var(--accent-light); }
 
-    .pause-changes-table td:last-child {
-      color: var(--text);
-      font-family: 'Cascadia Code', 'Fira Code', monospace;
-      font-size: 0.78rem;
+    /* Hero */
+    .hero { padding-top: 80px; padding-bottom: 72px; }
+    .hero .sub {
+      font-size: 18px;
+      color: var(--text-muted);
+      max-width: 580px;
+      margin-bottom: 36px;
+      line-height: 1.65;
+    }
+    .cta-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+    /* What it does */
+    .handles-intro {
+      font-size: 17px;
+      color: var(--text-muted);
+      margin-bottom: 28px;
+      line-height: 1.65;
     }
 
-    .pause-changes-table .preview-muted td {
-      color: var(--muted);
-      font-style: italic;
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 32px;
     }
-
-    .pause-notice {
-      border-left: 2px solid #4b5563;
-      color: #9ca3af;
-      font-size: 0.74rem;
-      line-height: 1.5;
-      padding: 0.4rem 0.65rem;
-      margin-top: 0.5rem;
+    .two-col ul { list-style: none; }
+    .two-col ul li {
+      padding: 9px 0;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      font-size: 15px;
     }
+    .two-col ul li::before { content: "– "; color: var(--accent); font-weight: 600; }
 
-    .pause-escalation-note {
-      background: #1a1408;
-      border: 1px solid #92400e;
-      border-radius: 6px;
-      color: var(--warn);
-      font-size: 0.78rem;
-      line-height: 1.45;
-      padding: 0.55rem 0.75rem;
-      margin-bottom: 0.6rem;
+    /* Value grid */
+    .value-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
     }
+    .value-item {
+      padding: 24px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .value-item h3 { color: var(--accent); }
+    .value-item p { font-size: 14px; margin: 0; }
 
-    /* ── Confirmation controls ── */
-    #confirm-controls {
-      display: none;
-      gap: 0.75rem;
-      margin-bottom: 1rem;
-      padding: 0.9rem 1rem;
-      background: #1a1408;
-      border: 1px solid #92400e;
-      border-radius: 8px;
+    /* Demo guide */
+    .demo-guide ol { list-style: none; counter-reset: steps; margin-bottom: 24px; }
+    .demo-guide ol li {
+      counter-increment: steps;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 16px;
+      font-size: 16px;
+      color: var(--text-muted);
+    }
+    .demo-guide ol li::before {
+      content: counter(steps);
+      min-width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
       align-items: center;
-      flex-wrap: wrap;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .demo-guide .note {
+      font-size: 13px;
+      color: var(--text-light);
+      padding: 12px 16px;
+      background: var(--bg-alt);
+      border-left: 3px solid var(--border);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      margin-bottom: 28px;
     }
 
-    #confirm-controls .confirm-label {
-      font-size: 0.82rem;
-      color: var(--warn);
-      font-weight: 500;
-      flex: 1;
+    /* Pricing */
+    .pricing-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .price-card {
+      padding: 32px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
+    .price-card.featured { border-color: var(--accent); background: var(--accent-light); }
+    .price { font-size: 36px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+    .price-label {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-light);
+    }
+    .price-card p { font-size: 14px; flex: 1; }
 
-    #confirm-yes {
-      background: #15803d;
-      padding: 0.5rem 1.2rem;
-      font-size: 0.85rem;
-    }
-    #confirm-yes:hover { background: #166534; }
+    /* Footer */
+    .site-footer { padding: 32px 0; border-top: 1px solid var(--border); }
 
-    #confirm-no {
-      background: #7f1d1d;
-      padding: 0.5rem 1.2rem;
-      font-size: 0.85rem;
+    /* Mobile */
+    @media (max-width: 640px) {
+      section { padding: 48px 0; }
+      .hero { padding-top: 56px; padding-bottom: 56px; }
+      .two-col, .value-grid, .pricing-grid { grid-template-columns: 1fr; }
+      .two-col { gap: 0; }
+      .value-grid, .pricing-grid { gap: 16px; }
+      .cta-row { flex-direction: column; align-items: stretch; }
+      .cta-row .btn { text-align: center; }
     }
-    #confirm-no:hover { background: #991b1b; }
   </style>
 </head>
 <body>
 
-<header>
-  <div class="header-text">
-    <h1>AI Operations Agent</h1>
-    <p>Natural language → intent classification → tool execution → structured trace</p>
+<!-- ── Hero ─────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="container">
+    <h1>Stop losing money to no-shows and manual workflow.</h1>
+    <p class="sub">
+      Automate booking, client routing and scheduling with this software — adjusted to your
+      services and policy, and enhanced with natural language interpretation and backend
+      code resilience.
+    </p>
+    <div class="cta-row">
+      <a href="mailto:liquor.busy@gmail.com?subject=Custom demo for my business — €150"
+         class="btn btn-primary">Get a demo built for my business — €150</a>
+      <a href="demo.html" class="btn btn-secondary">Try the live demo</a>
+    </div>
   </div>
-  <button class="btn-ghost" onclick="resetDatabase()">↺ Reset Demo</button>
-</header>
+</section>
 
-<!-- ─── Intro ─────────────────────────────────────────────────────────────────── -->
-<details class="card intro-card">
-  <summary>
-    <span class="intro-summary-title">About this demo</span>
-    <span class="intro-chevron"></span>
-  </summary>
-  <div class="intro-body">
-    <p>This is a demo support site for a company named <strong>Fitness World</strong> (adjust the name to your business). The AI agent handles member requests in natural language — no menus, no forms — and enforces the company's rules automatically. The policy it operates under:</p>
+<!-- ── What it does ──────────────────────────────────────────────── -->
+<section>
+  <div class="container">
+    <h2>What it does</h2>
+    <p class="handles-intro">
+      A client wants to reschedule from Monday to Wednesday, or ask about your services?
+      The system answers exactly that — with your rules applied, and without needing any supervision.
+    </p>
+    <div class="two-col">
+      <ul>
+        <li>Book a new appointment</li>
+        <li>Reschedule an existing booking</li>
+        <li>Cancel with notice</li>
+        <li>Check available slots</li>
+      </ul>
+      <ul>
+        <li>Same-day cancel — fee applied automatically</li>
+        <li>Late reschedule — policy enforced</li>
+        <li>Service and pricing questions</li>
+        <li>Cancellation policy questions</li>
+      </ul>
+    </div>
+  </div>
+</section>
 
-    <div class="intro-section-label">Company policy</div>
-    <div class="policy-grid">
-      <div class="policy-item">
-        <div class="policy-item-label">Plans</div>
-        <div class="policy-item-body"><strong>Standard</strong> — €60/mo · €600/yr<br><strong>Premium</strong> — €120/mo · €1,200/yr<br><em>Premium includes a guest pass</em></div>
+<!-- ── Why worth it ──────────────────────────────────────────────── -->
+<section>
+  <div class="container">
+    <h2>Why worth it</h2>
+    <div class="value-grid">
+      <div class="value-item">
+        <h3>Time</h3>
+        <p>The average service business spends 9 hours a week — time that could be spent gaining revenue - just manually booking appointments. The system automates this completely.</p>
       </div>
-      <div class="policy-item">
-        <div class="policy-item-label">Refunds</div>
-        <div class="policy-item-body">Within <strong>14 days</strong> of purchase only. <strong>One per account lifetime</strong> — a second request is automatically escalated to the support team.</div>
+      <div class="value-item">
+        <h3>Simplicity</h3>
+        <p>About 1 in 5 customers abandon the booking process because it takes too long or is too complicated. The system schedules and routes everything in mere seconds — just from a prompt.</p>
       </div>
-      <div class="policy-item">
-        <div class="policy-item-label">Membership Pause</div>
-        <div class="policy-item-body">Minimum <strong>30 days</strong>. Fee: €10/30-day period. Up to 3 months: self-serve. 4–6 months: manual approval required. 7+ months: denied.</div>
-      </div>
-      <div class="policy-item">
-        <div class="policy-item-label">Plan Changes</div>
-        <div class="policy-item-body">Upgrade or downgrade at any time. Prorated charge or credit calculated automatically.</div>
+      <div class="value-item">
+        <h3>Reliability</h3>
+        <p>People make mistakes when organizing working calendars. This costs up to 15% of total revenue from missed bookings, poor management, and wasted labor alone.</p>
       </div>
     </div>
-
-    <div class="intro-section-label">What you can ask the agent</div>
-    <div class="action-grid">
-      <div class="action-item">
-        <div class="action-item-name">Ask a question</div>
-        <div class="action-item-example">"What's included in the Premium plan?"<br>"How do pauses work?"</div>
-        <div class="action-item-note">The agent looks up the FAQ or interprets policy to give a plain-English answer. No account changes are made.</div>
-      </div>
-      <div class="action-item">
-        <div class="action-item-name">Request a refund</div>
-        <div class="action-item-example">"I'd like a refund on my last payment."</div>
-        <div class="action-item-note">Checks the 14-day window and refund history. Approves, rejects, or escalates based on the profile you selected — try profiles with and without prior refunds to see both outcomes.</div>
-      </div>
-      <div class="action-item">
-        <div class="action-item-name">Pause your membership</div>
-        <div class="action-item-example">"Pause my membership for 6 weeks starting July 1st."</div>
-        <div class="action-item-note">Calculates the pause fee, checks the notice period, and pauses the account — or escalates if the duration falls in the manual-approval range.</div>
-      </div>
-      <div class="action-item">
-        <div class="action-item-name">Cancel your membership</div>
-        <div class="action-item-example">"Please cancel my subscription."</div>
-        <div class="action-item-note">Asks for your confirmation before acting — this demonstrates the agent's safety step for irreversible actions. Say YES or NO in the prompt that appears.</div>
-      </div>
-      <div class="action-item">
-        <div class="action-item-name">Change your plan</div>
-        <div class="action-item-example">"Switch me to Premium, billed annually."</div>
-        <div class="action-item-note">Upgrades or downgrades the account and shows the prorated amount charged or credited.</div>
-      </div>
-    </div>
-
   </div>
-</details>
+</section>
 
-<!-- ─── How to use this demo ─────────────────────────────────────────────────── -->
-<details class="card intro-card">
-  <summary>
-    <span class="intro-summary-title">How to use this demo</span>
-    <span class="intro-chevron"></span>
-  </summary>
-  <div class="intro-body">
-    <ol class="intro-steps">
-      <li>Open <strong>Set Your Account</strong> and pick a profile. Each profile simulates a real customer situation — the tags on each card (e.g. "Refund eligible", "No refund", "Currently paused") tell you what conditions apply.</li>
-      <li>Type a request in plain English in the <strong>Customer Experience</strong> panel, as if you are that customer. You don't need to use any specific wording — the agent figures out the intent.</li>
-      <li>Read the <strong>Decision Trace</strong> that appears below the response. Each step shows what the agent did: how it interpreted the request, which action it chose, which policy rules it checked, and what it executed.</li>
-      <li>Try the same request with different profiles to see how the outcome changes based on account state.</li>
+<!-- ── How to use this demo ─────────────────────────────────────── -->
+<section class="demo-guide">
+  <div class="container">
+    <h2>How to use this demo</h2>
+    <ol>
+      <li>Click "Try the live demo" below.</li>
+      <li>Pick a scenario.</li>
+      <li>Type what the client would actually say to you.</li>
+      <li>Watch the system handle everything, and verify that it behaves correctly.</li>
     </ol>
-  </div>
-</details>
-
-<!-- ─── What you can check ────────────────────────────────────────────────────── -->
-<details class="card intro-card">
-  <summary>
-    <span class="intro-summary-title">What you can check</span>
-    <span class="intro-chevron"></span>
-  </summary>
-  <div class="intro-body">
-    <ol class="intro-steps">
-      <li>Whether the actions performed match the policy constraints stated above.</li>
-      <li>Whether ambiguous, malicious, or non-standard prompts break the system or result in losses.</li>
-      <li>Full decision trace, viewable as both formatted text and raw JSON.</li>
-    </ol>
-  </div>
-</details>
-
-<!-- ─── Why is it applicable to you ─────────────────────────────────────────── -->
-<details class="card intro-card intro-card-pitch">
-  <summary>
-    <span class="intro-summary-title">Why is it applicable to you</span>
-    <span class="intro-chevron"></span>
-  </summary>
-  <div class="intro-body">
-    <p>The designed architecture isn't bound to refunds or subscriptions — those are just one set of constraints and available actions. The core logic of this architecture is domain-agnostic, meaning it can be applied to virtually any domain, as long as there are discrete rules and execution necessity. Of course, all the branding — starting from name and FAQs to policy and decision logic — will be fully adjusted to you, should you be an e-commerce company, a shipping agency, or anything else.</p>
-  </div>
-</details>
-
-<!-- ─── Panel 1: Set Your Account ───────────────────────────────────────────── -->
-<div class="card" id="account-card">
-  <div class="account-card-header" onclick="toggleAccountPanel()">
-    <div>
-      <div class="panel-title" style="margin:0">Set Your Account</div>
-      <div id="account-header-sub">No account selected — click to choose a profile</div>
+    <p class="note">
+      The demo uses fictional clients and a fictional schedule.
+      Your business would have your real clients, your real services, and your real policy.
+    </p>
+    <div class="cta-row">
+      <a href="demo.html" class="btn btn-primary">Try the live demo</a>
     </div>
-    <span class="acct-chevron" id="acct-chevron">▶</span>
   </div>
+</section>
 
-  <div id="account-panel" style="display:none">
-  <div class="account-panel-inner">
-  <div class="archetype-grid" id="archetype-grid">
-    <div style="color:var(--muted);font-size:0.82rem">Loading profiles…</div>
+<!-- ── Why this product ──────────────────────────────────────────── -->
+<section>
+  <div class="container">
+    <h2>Why this product</h2>
+    <p>
+      This system is a hybrid between AI and software. Unlike chatbots or no-code agents,
+      it can't go rogue because of prompt manipulation or hallucination — the internal logic
+      is coded. And unlike pure software, it's capable of interpreting natural language to
+      fit all clients' needs.
+    </p>
   </div>
+</section>
 
-  <!-- Custom account form (toggled by the Custom card) -->
-  <div id="custom-form" style="display:none">
-    <div class="cf-grid">
-      <div class="cf-field">
-        <span class="cf-label">Plan</span>
-        <select id="cf-plan">
-          <option value="standard">Standard</option>
-          <option value="premium">Premium</option>
-        </select>
+<!-- ── Pricing ──────────────────────────────────────────────────── -->
+<section>
+  <div class="container">
+    <h2>Pricing</h2>
+    <div class="pricing-grid">
+      <div class="price-card featured">
+        <div class="price-label">Prototype</div>
+        <div class="price">€150</div>
+        <p>
+          For a prototype using your services, pricing, and policy. See how the system
+          would work with your tasks under your rules.
+        </p>
+        <a href="mailto:liquor.busy@gmail.com?subject=Prototype — €150"
+           class="btn btn-primary">Contact to start</a>
       </div>
-      <div class="cf-field">
-        <span class="cf-label">Status</span>
-        <select id="cf-status-select">
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="refunded">Refunded</option>
-        </select>
-      </div>
-      <div class="cf-field">
-        <span class="cf-label">Billing Cycle</span>
-        <select id="cf-billing-cycle">
-          <option value="monthly">Monthly</option>
-          <option value="annual">Annual</option>
-        </select>
-      </div>
-      <div class="cf-field">
-        <span class="cf-label">Last Payment Date</span>
-        <input type="date" id="cf-last-payment-date" />
+      <div class="price-card">
+        <div class="price-label">Full product</div>
+        <div class="price">€1,000</div>
+        <p>
+          For a complete, deployment-ready system, already integrated to your calendar,
+          booking system, inbox, or website that handles your clients cleanly.
+        </p>
+        <a href="mailto:liquor.busy@gmail.com?subject=Full product — €1000"
+           class="btn btn-secondary">Contact to start</a>
       </div>
     </div>
-    <div class="cf-checks">
-      <label class="cf-check-label">
-        <input type="checkbox" id="cf-refund-history" />
-        Refund history present
-      </label>
-      <label class="cf-check-label">
-        <input type="checkbox" id="cf-pending-action" />
-        Pending action
-      </label>
-    </div>
-    <div class="cf-footer">
-      <button id="cf-apply-btn" onclick="applyCustomAccount()" style="padding:0.5rem 1.2rem;font-size:0.85rem">Apply</button>
-      <span id="cf-status-msg"></span>
-    </div>
   </div>
+</section>
 
-    <div id="account-detail"></div>
-  </div><!-- /account-panel-inner -->
-  </div><!-- /account-panel -->
-</div><!-- /account-card -->
+<!-- ── Footer ───────────────────────────────────────────────────── -->
+<footer class="site-footer"></footer>
 
-<!-- ─── Panel 2: Customer Experience ────────────────────────────────────────── -->
-<div class="card">
-  <div class="panel-title">Customer Experience</div>
-  <div class="panel-sub">Type a request as if you're the customer. The agent will classify, select a tool, and respond.</div>
-
-  <div id="no-account-notice">Select a profile above before submitting a request.</div>
-
-  <textarea id="message-input" placeholder="e.g. I'd like to pause my membership for 2 months starting July 1st"></textarea>
-
-  <div class="input-row" style="margin-top:0.75rem;display:flex;gap:0.75rem">
-    <input type="text" id="session-input" placeholder="Session ID (leave blank to auto-generate)" />
-  </div>
-
-  <div class="controls" style="margin-top:0.75rem">
-    <label class="toggle">
-      <input type="checkbox" id="history-toggle" checked />
-      Remember session history
-    </label>
-    <div style="flex:1"></div>
-    <div id="status"></div>
-    <button id="submit-btn" onclick="submitRequest()">Run</button>
-  </div>
-
-  <div id="confirm-controls">
-    <span class="confirm-label">Action requires confirmation — review the details above</span>
-    <button id="confirm-yes" onclick="sendConfirmation(true)">YES — Confirm</button>
-    <button id="confirm-no"  onclick="sendConfirmation(false)">NO — Cancel</button>
-  </div>
-
-  <!-- Form panel — rendered dynamically when halt_reason="form_required" -->
-  <div id="form-controls"></div>
-
-  <div id="result-area">
-    <div class="result-header">
-      <span id="halt-badge" class="badge"></span>
-      <span id="meta-text"></span>
-    </div>
-
-    <div id="response-text"></div>
-
-    <div class="section-label">Decision Trace</div>
-    <div class="trace-steps" id="trace-container"></div>
-
-    <div id="error-block">
-      <div id="error-message"></div>
-      <details class="raw-json">
-        <summary>Raw error</summary>
-        <div class="raw-json-body" id="error-raw"></div>
-      </details>
-    </div>
-
-    <details class="raw-json" style="margin-top:1rem">
-      <summary>Raw JSON response</summary>
-      <div class="raw-json-body" id="raw-json"></div>
-    </details>
-  </div>
-</div>
-
-<script src="app.js?v=14"></script>
 </body>
 </html>

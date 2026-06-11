@@ -98,7 +98,7 @@ class AgentLog(Base):
 # Stores conversation history per session for memory.py.
 # history is a JSON array of {role, content} turn objects.
 
-class Session(Base):
+class SessionRecord(Base):
     __tablename__ = "sessions"
 
     session_id   = Column(String(64),  primary_key=True)

@@ -67,6 +67,7 @@ class AgentState(TypedDict):
     account_context: str | None    # human-readable summary from describe_account()
     form_data: dict | None         # form field values submitted alongside confirmed=True
     dry_run: bool                  # True = simulate execution, no side effects
+    domain: str | None             # active domain pack name (forwarded from RunRequest)
 
     # ── Interpretation ─────────────────────────────────────────────────────────
     classification: str | None     # e.g. "Subscription pause request — dates unspecified"
@@ -214,6 +215,16 @@ Rules:
 - No filler phrases. No assumptions beyond what the data contains.\
 """
 
+_SCHEDULING_SYSTEM = """\
+You are a friendly appointment desk assistant. A client's scheduling request had a constraint.
+Rephrase the following message as a warm, helpful 1-2 sentence response.
+Rules:
+- If an alternative date is mentioned, offer it as a natural suggestion ("Would you like to book for Wednesday the 17th instead?").
+- Use conversational language. Never say "error", "system", "unable to complete", or "not available at this moment" — say "fully booked" or "we're closed" as appropriate.
+- Open with a brief acknowledgement like "Sorry," or "Unfortunately," then the helpful substance.
+- No filler phrases beyond the opening. No bullet points.\
+"""
+
 
 # ─── Form specifications ──────────────────────────────────────────────────────
 # Defines which tools require a form and what fields to collect.
@@ -288,8 +299,11 @@ _FORM_SPECS: dict[str, dict[str, Any]] = {
 _SYSTEM_FIELDS = frozenset({"account_id", "session_id", "confirmed"})
 
 _ACTION_TOOLS = frozenset({
+    # customer_ops
     "process_refund", "cancel_subscription", "pause_subscription",
     "change_plan", "send_member_notification",
+    # appointments
+    "book_appointment", "reschedule_appointment", "cancel_appointment",
 })
 
 # Key: tool already executed. Value: set of tools blocked as a result.
@@ -337,6 +351,29 @@ def _find_conflicting_action_pairs(tools: list[dict]) -> list[tuple[str, str]]:
             if b in _CONFLICTS.get(a, frozenset()) or a in _CONFLICTS.get(b, frozenset()):
                 return [(a, b)]
     return []
+
+
+def _describe_entity(entity_id: str, domain: str) -> str | None:
+    """
+    Return a plain-text entity description from the active domain's tools module.
+    Tries describe_entity() first, then describe_account() for backward compat.
+    """
+    import importlib
+    try:
+        from domains import load_domain_pack
+        pack = load_domain_pack(domain)
+        for mod_path in pack.get("tools_modules", []):
+            try:
+                mod = importlib.import_module(mod_path)
+                fn = getattr(mod, "describe_entity", None) or getattr(mod, "describe_account", None)
+                if fn:
+                    result = fn(entity_id)
+                    return result if isinstance(result, str) else None
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return f"entity_id={entity_id}"
 
 
 def _classify_intent(input_text: str, account_context: str | None) -> str:
@@ -423,6 +460,34 @@ def _derive_verified_changes(tool_name: str, result: Any) -> list[str]:
         if d.get("guest_pass_impact"):
             changes.append(f"Guest pass: {d['guest_pass_impact']}")
 
+    elif tool_name == "book_appointment":
+        if d.get("appointment_date") and d.get("appointment_time"):
+            service = d.get("service_name", "Appointment")
+            changes.append(f"{service} booked for {d['appointment_date']} at {d['appointment_time']}")
+        price = d.get("price")
+        if price is not None:
+            changes.append(f"Session fee: €{price:.2f}")
+
+    elif tool_name == "reschedule_appointment":
+        if d.get("old_date") and d.get("new_date"):
+            changes.append(
+                f"Appointment moved from {d['old_date']} {d.get('old_time', '')} "
+                f"to {d['new_date']} {d.get('new_time', '')}".strip()
+            )
+        fee = d.get("reschedule_fee")
+        if fee is not None and fee > 0:
+            changes.append(f"Rescheduling fee charged: €{fee:.2f}")
+
+    elif tool_name == "cancel_appointment":
+        appt_date = d.get("appointment_date")
+        if appt_date:
+            changes.append(f"Appointment on {appt_date} cancelled")
+        fee = d.get("cancellation_fee")
+        if fee is not None and fee > 0:
+            changes.append(f"Late cancellation fee: €{fee:.2f}")
+        elif d.get("fee_waived") or fee == 0:
+            changes.append("No cancellation fee (sufficient notice given)")
+
     return changes or (["Operation completed — no account state changes"] if d.get("success") else [])
 
 
@@ -465,11 +530,8 @@ def interpretation_node(state: AgentState) -> dict:
     account_id = state.get("account_id")
     account_context: str | None = None
     if account_id:
-        try:
-            from tools.customer_ops import describe_account
-            account_context = describe_account(account_id)
-        except Exception:
-            account_context = f"account_id={account_id}"
+        domain_name = state.get("domain") or settings.domain_pack
+        account_context = _describe_entity(account_id, domain_name)
 
     updates: dict[str, Any] = {
         "history": history,
@@ -1139,7 +1201,7 @@ def respond_node(state: AgentState) -> dict:
     elif halt_reason == "max_iterations":
         response = (
             "Unable to determine the correct action after several attempts. "
-            "Contact support@fitness.com for assistance."
+            "Please contact support for assistance."
         )
     elif halt_reason == "cancelled":
         response = "Request cancelled. No changes were made to your account."
@@ -1186,19 +1248,22 @@ def _fmt_tool_result(tool_name: str, r: dict, user_input: str) -> str | None:
 
     # success
     verified = r.get("verified_changes") or []
-    if tool_name in _ACTION_TOOLS:
-        facts = [c for c in verified if not c.startswith("Awaiting") and not c.startswith("No system")]
-        return ". ".join(facts) + "." if facts else None
-
     result = r.get("result")
+    answer = (
+        getattr(result, "answer", None)
+        or getattr(result, "message", None)
+        or (result.get("answer") or result.get("message") if isinstance(result, dict) else None)
+    ) if result is not None else None
+
+    if tool_name in _ACTION_TOOLS:
+        facts = [c for c in verified if not c.startswith("Awaiting") and not c.startswith("No system") and not c.startswith("Operation completed")]
+        if facts:
+            return ". ".join(facts) + "."
+        return answer if answer else None
+
     if result is None:
         return None
 
-    # Tools that already contain a natural-language answer — return it directly
-    answer = (
-        getattr(result, "answer", None)
-        or (result.get("answer") if isinstance(result, dict) else None)
-    )
     if answer:
         return answer
 
@@ -1226,21 +1291,25 @@ def _fmt_success(state: AgentState) -> str:
         tool_name = state.get("selected_tool", "")
         verified  = state.get("verified_changes") or []
 
-        if tool_name in _ACTION_TOOLS:
-            if not verified:
-                return "Request processed."
-            facts = [c for c in verified if not c.startswith("Awaiting") and not c.startswith("No system")]
-            return ". ".join(facts) + "." if facts else "Request processed."
-
         result = state.get("tool_result")
+
+        # Pre-formed natural-language answer (e.g. availability offer, FAQ, no-date booking)
+        answer = (
+            getattr(result, "answer", None)
+            or getattr(result, "message", None)
+            or (result.get("answer") or result.get("message") if isinstance(result, dict) else None)
+        ) if result is not None else None
+
+        if tool_name in _ACTION_TOOLS:
+            facts = [c for c in verified if not c.startswith("Awaiting") and not c.startswith("No system") and not c.startswith("Operation completed")]
+            if facts:
+                return ". ".join(facts) + "."
+            # No real state change — return pre-formed message if present
+            return answer if answer else "Request processed."
+
         if result is None:
             return "Done."
 
-        # Tools that already contain a natural-language answer — return it directly
-        answer = (
-            getattr(result, "answer", None)
-            or (result.get("answer") if isinstance(result, dict) else None)
-        )
         if answer:
             return answer
 
@@ -1268,20 +1337,37 @@ def _fmt_success(state: AgentState) -> str:
     return "\n\n".join(parts) if parts else "Request processed."
 
 
+_CONFIRMATION_LABELS: dict[str, str] = {
+    "billing_impact": "Billing impact",
+    "member_impact": "Membership",
+    "guest_pass_impact": "Guest pass",
+    "subscription_validity_impact": "Subscription",
+    "fee_impact": "Fee",
+    "appointment_date": "Appointment date",
+    "service": "Service",
+    "old_date": "Current appointment",
+    "new_date": "Rescheduled to",
+    "reschedule_fee": "Rescheduling fee",
+    "cancellation_fee": "Cancellation fee",
+    "price": "Session fee",
+}
+
+_CONFIRMATION_SKIP = frozenset({"action", "summary", "raw"})
+
+
 def _fmt_confirmation(state: AgentState) -> str:
     p = state.get("confirmation_payload") or {}
-    return "\n".join([
-        "Action pending confirmation:",
-        "",
-        p.get("summary", ""),
-        "",
-        f"  Billing impact:      {p.get('billing_impact', 'N/A')}",
-        f"  Membership:          {p.get('member_impact', 'N/A')}",
-        f"  Guest pass:          {p.get('guest_pass_impact', 'N/A')}",
-        f"  Subscription:        {p.get('subscription_validity_impact', 'N/A')}",
-        "",
-        "Reply YES to authorise or NO to cancel.",
-    ])
+    summary = p.get("summary", "Please confirm the following action.")
+    lines: list[str] = ["Action pending confirmation:", "", summary, ""]
+    for key, val in p.items():
+        if key.startswith("_") or key in _CONFIRMATION_SKIP:
+            continue
+        if val is None or val == "N/A" or val == "":
+            continue
+        label = _CONFIRMATION_LABELS.get(key, key.replace("_", " ").title())
+        lines.append(f"  {label}: {val}")
+    lines.extend(["", "Reply YES to authorise or NO to cancel."])
+    return "\n".join(lines)
 
 
 def _fmt_form_required(state: AgentState) -> str:
@@ -1297,19 +1383,30 @@ def _fmt_error(state: AgentState) -> str:
     code = error.get("code", "")
     message = error.get("message", "An error occurred processing your request.")
 
+    _SCHEDULING_CONSTRAINTS = {
+        "DATE_NOT_AVAILABLE", "CLOSED_DAY", "DATE_IN_PAST", "INVALID_DATE",
+        "APPOINTMENT_NOT_FOUND", "ALREADY_CANCELLED_APPT", "DUPLICATE_BOOKING",
+        "NO_ACTIVE_APPOINTMENT", "MAX_ADVANCE_BOOKING_EXCEEDED", "PENDING_RESCHEDULE_ACTIVE",
+    }
+    if code in _SCHEDULING_CONSTRAINTS:
+        resp = llm_call(
+            messages=[{"role": "user", "content": message}],
+            system=_SCHEDULING_SYSTEM,
+            model_tier="fast",
+        )
+        return resp.get("content") or message
+
     _USER_FRIENDLY = {
         "REFUND_WINDOW_EXPIRED", "REFUND_ESCALATION_REQUIRED",
         "PENDING_OPERATION_ACTIVE", "ALREADY_CANCELLED", "ALREADY_PAUSED",
         "PAUSE_NOTICE_INSUFFICIENT", "PAUSE_DURATION_DENIED",
         "PAUSE_ESCALATION_REQUIRED", "PAUSE_DOCUMENTATION_ESCALATION",
         "ACCOUNT_PAUSED", "ACCOUNT_NOT_FOUND", "NO_ACTIVE_SUBSCRIPTION",
+        "SLOT_NOT_AVAILABLE", "INSUFFICIENT_NOTICE",
     }
-    suffix = (
-        " If you believe this is an error or have additional evidence, "
-        "please contact support@fitness.com."
-    )
-    base = message if code in _USER_FRIENDLY else f"Unable to complete your request. {message}"
-    return base + suffix
+    if code in _USER_FRIENDLY:
+        return message
+    return f"Something went wrong. {message} If this persists, please contact support."
 
 
 # ─── Routing ──────────────────────────────────────────────────────────────────

@@ -34,6 +34,7 @@ def run_agent(
     account_id: str | None = None,
     form_data: dict | None = None,
     dry_run: bool = False,
+    domain: str | None = None,
 ) -> RunResponse:
     """
     Run the agent loop for one request.
@@ -90,6 +91,7 @@ def run_agent(
         "account_context": None,
         "form_data": form_data,
         "dry_run": dry_run,
+        "domain": domain or settings.domain_pack,
         # ── Interpretation ─────────────────────────────────────────────────────
         "classification": None,
         # ── Selection ──────────────────────────────────────────────────────────

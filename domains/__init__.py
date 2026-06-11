@@ -26,6 +26,7 @@ from domains.base import DomainPack
 _DOMAIN_REGISTRY: dict[str, str] = {
     "customer_ops": "domains.customer_ops",
     "it_helpdesk":  "domains.it_helpdesk",
+    "appointments": "domains.appointments",
 }
 
 

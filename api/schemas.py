@@ -63,6 +63,14 @@ class RunRequest(BaseModel):
             "Use for testing routing without modifying any account state."
         ),
     )
+    domain: str | None = Field(
+        default=None,
+        description=(
+            "Domain pack to use for this request. "
+            "Defaults to the server's active DOMAIN_PACK when omitted. "
+            "Provided for forward-compatibility with multi-domain setups."
+        ),
+    )
 
 
 class TraceStep(BaseModel):

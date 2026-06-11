@@ -20,7 +20,7 @@ from typing import Any, Generator
 from sqlalchemy.orm import Session
 
 from config import settings
-from db.models import AgentLog, DemoAccountState, PendingConfirmation, Session as SessionModel, SessionLocal
+from db.models import AgentLog, DemoAccountState, PendingConfirmation, SessionRecord, SessionLocal
 
 
 # ─── Session context manager ──────────────────────────────────────────────────
@@ -297,9 +297,9 @@ def get_log_by_id(log_id: int, db: Session | None = None) -> AgentLog | None:
 
 # ─── Sessions (conversation history) ─────────────────────────────────────────
 
-def get_session(session_id: str, db: Session | None = None) -> SessionModel | None:
-    def _query(session: Session) -> SessionModel | None:
-        return session.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+def get_session(session_id: str, db: Session | None = None) -> SessionRecord | None:
+    def _query(session: Session) -> SessionRecord | None:
+        return session.query(SessionRecord).filter(SessionRecord.session_id == session_id).first()
 
     if db is not None:
         return _query(db)
@@ -311,16 +311,16 @@ def upsert_session(
     session_id: str,
     history: list[dict[str, Any]],
     db: Session | None = None,
-) -> SessionModel:
+) -> SessionRecord:
     """
     Create a new session or overwrite the history of an existing one.
     Updates last_active timestamp on every call.
     """
-    def _upsert(session: Session) -> SessionModel:
-        record = session.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+    def _upsert(session: Session) -> SessionRecord:
+        record = session.query(SessionRecord).filter(SessionRecord.session_id == session_id).first()
         now = datetime.utcnow()
         if record is None:
-            record = SessionModel(
+            record = SessionRecord(
                 session_id=session_id,
                 created_at=now,
                 last_active=now,
@@ -352,7 +352,7 @@ def get_session_history(session_id: str, db: Session | None = None) -> list[dict
 
 def delete_session(session_id: str, db: Session | None = None) -> None:
     def _delete(session: Session) -> None:
-        session.query(SessionModel).filter(SessionModel.session_id == session_id).delete()
+        session.query(SessionRecord).filter(SessionRecord.session_id == session_id).delete()
 
     if db is not None:
         _delete(db)
@@ -370,8 +370,8 @@ def purge_expired_sessions(db: Session | None = None) -> int:
 
     def _purge(session: Session) -> int:
         deleted = (
-            session.query(SessionModel)
-            .filter(SessionModel.last_active < cutoff)
+            session.query(SessionRecord)
+            .filter(SessionRecord.last_active < cutoff)
             .delete(synchronize_session=False)
         )
         return deleted
@@ -614,14 +614,13 @@ def clear_all_logs(db: Session | None = None) -> dict:
     Also resets all demo account overrides.
     Demo use only — called by POST /db/reset.
     """
-    from db.models import AgentLog, SessionModel, PendingConfirmation
-
     def _clear(session: Session) -> dict:
+        from sqlalchemy import text as _text
         pending  = session.query(PendingConfirmation).delete(synchronize_session=False)
-        sessions = session.query(SessionModel).delete(synchronize_session=False)
+        session.execute(_text("DELETE FROM sessions"))
         logs     = session.query(AgentLog).delete(synchronize_session=False)
         session.query(DemoAccountState).delete(synchronize_session=False)
-        return {"logs": logs, "sessions": sessions, "pending": pending}
+        return {"logs": logs, "pending": pending}
 
     if db is not None:
         return _clear(db)
