@@ -35,20 +35,23 @@ PACK: DomainPack = {
         "Never mention or suggest times (9:00, 11:00, 14:00, etc.)."
     ),
     "selection_rules": """\
-Tool selection rules:
-- Client asks to book, schedule, or make a new appointment       → book_appointment
+Tool selection rules (pick the FIRST matching rule — do not add extra tools):
+- Client wants to book/schedule/make a new appointment AND gives a specific date → book_appointment
+- Client wants to book/schedule/make a new appointment WITHOUT a specific date   → check_availability
 - Client asks to reschedule, move, or change their appointment   → reschedule_appointment
 - Client asks to cancel their appointment                        → cancel_appointment
-- Client asks what times or slots are available                  → check_availability
-- Client asks about services, prices, policies, or opening hours → appointment_faq
+- Client asks what dates/times/slots are available               → check_availability
+- Client asks EXPLICITLY about services, prices, or policies     → appointment_faq
 - Entire request is GENUINELY UNCLEAR                           → clarify (solo)
 
-Disambiguation rules:
+Critical disambiguation:
+- "I'd like to make an appointment next week" → check_availability (date given as range, no specific day)
+- "I'd like to book for Monday" → book_appointment (specific date given)
+- "I'd like to book an appointment" (no date at all) → book_appointment (tool handles no-date case)
 - "Can I move/change/shift my appointment" → reschedule_appointment, not cancel_appointment
 - "What's your cancellation policy" → appointment_faq, not cancel_appointment
 - "Is Tuesday free" / "Do you have openings" → check_availability
-- "I need to cancel" / "Cancel my booking" → cancel_appointment
-- "Book me in" / "I'd like to make an appointment" → book_appointment
+- NEVER call appointment_faq alongside a booking/scheduling intent — it is for standalone Q&A only
 
 Multi-tool examples:
 - "Cancel my Thursday and book me for next Monday" → [cancel_appointment, book_appointment]

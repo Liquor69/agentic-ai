@@ -26,7 +26,7 @@ import json
 from datetime import date, timedelta
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from config import llm_call
 from db import crud
@@ -424,6 +424,21 @@ class CheckAvailabilityInput(BaseModel):
         ),
     )
     session_id: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalise_date_fields(cls, data: dict) -> dict:
+        """Accept any start/end field name the LLM might produce."""
+        if not isinstance(data, dict):
+            return data
+        _START = {"date_range_start", "range_start", "date_start", "start_date", "start", "from_date", "from"}
+        _END   = {"date_range_end",   "range_end",   "date_end",   "end_date",   "end",   "to_date",   "to"}
+        for k, v in list(data.items()):
+            if k in _START and "date_range_start" not in data:
+                data["date_range_start"] = v
+            elif k in _END and "date_range_end" not in data:
+                data["date_range_end"] = v
+        return data
 
 
 class AvailabilityResult(BaseModel):
