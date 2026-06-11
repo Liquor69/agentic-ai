@@ -407,15 +407,15 @@ class FAQResult(BaseModel):
 
 
 class CheckAvailabilityInput(BaseModel):
-    range_start: str | None = Field(
+    date_range_start: str | None = Field(
         default=None,
         description=(
             "Start of the requested date range (YYYY-MM-DD). "
-            "For a single day query, set this and leave range_end unset. "
+            "For a single day query, set this and leave date_range_end unset. "
             "If both are omitted, returns the next available days."
         ),
     )
-    range_end: str | None = Field(
+    date_range_end: str | None = Field(
         default=None,
         description=(
             "End of the requested date range (YYYY-MM-DD, inclusive). "
@@ -512,23 +512,23 @@ def check_availability(input: CheckAvailabilityInput) -> AvailabilityResult:
     def _fmt(d: date) -> str:
         return f"{d.strftime('%A, %d %B')} ({d.isoformat()})"
 
-    if input.range_start:
+    if input.date_range_start:
         try:
-            range_start = date.fromisoformat(input.range_start)
+            date_range_start = date.fromisoformat(input.date_range_start)
         except ValueError:
-            range_start = today
+            date_range_start = today
 
-        range_start = max(range_start, today)
+        date_range_start = max(date_range_start, today)
 
         try:
-            range_end = date.fromisoformat(input.range_end) if input.range_end else range_start
+            date_range_end = date.fromisoformat(input.date_range_end) if input.date_range_end else date_range_start
         except ValueError:
-            range_end = range_start
+            date_range_end = date_range_start
 
-        if range_end < range_start:
-            range_end = range_start
+        if date_range_end < date_range_start:
+            date_range_end = date_range_start
 
-        available = _available_dates_in_range(range_start, range_end)
+        available = _available_dates_in_range(date_range_start, date_range_end)
         total = len(available)
 
         if total:
@@ -550,11 +550,11 @@ def check_availability(input: CheckAvailabilityInput) -> AvailabilityResult:
 
         # Nothing in range — find nearest outside
         range_str = (
-            f"{range_start.strftime('%d %B')}–{range_end.strftime('%d %B')}"
-            if range_start != range_end
-            else range_start.strftime("%A, %d %B")
+            f"{date_range_start.strftime('%d %B')}–{date_range_end.strftime('%d %B')}"
+            if date_range_start != date_range_end
+            else date_range_start.strftime("%A, %d %B")
         )
-        nearest = _nearest_outside_range(range_start, range_end)
+        nearest = _nearest_outside_range(date_range_start, date_range_end)
         dates_out = [d.isoformat() for d in nearest]
 
         if nearest:

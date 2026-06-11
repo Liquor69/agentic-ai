@@ -58,15 +58,15 @@ Extractable parameters (extract only values explicitly stated — never invent):
 - book_appointment:        requested_date (YYYY-MM-DD)
 - reschedule_appointment:  new_date (YYYY-MM-DD)
 - cancel_appointment:      (no extractable params — client_id comes from account context)
-- check_availability:      range_start (YYYY-MM-DD), range_end (YYYY-MM-DD)
+- check_availability:      date_range_start (YYYY-MM-DD), date_range_end (YYYY-MM-DD)
 - appointment_faq:         question (exact question text)
 
 Date range derivation for check_availability (today is always provided in the account context):
-- Single day ("next Monday", "Thursday")     → range_start = that date, range_end = same date
-- "next week"                                → range_start = next Monday, range_end = next Saturday
-- "the week after next"                      → range_start = Monday in 2 weeks, range_end = Saturday in 2 weeks
-- "this week"                                → range_start = today, range_end = this Saturday
-- "next month"                               → range_start = 1st of next month, range_end = last day of next month
+- Single day ("next Monday", "Thursday")     → date_range_start = that date, date_range_end = same date
+- "next week"                                → date_range_start = next Monday, date_range_end = next Saturday
+- "the week after next"                      → date_range_start = Monday in 2 weeks, date_range_end = Saturday in 2 weeks
+- "this week"                                → date_range_start = today, date_range_end = this Saturday
+- "next month"                               → date_range_start = 1st of next month, date_range_end = last day of next month
 - No date or time mentioned                  → omit both fields entirely\
 """,
 }

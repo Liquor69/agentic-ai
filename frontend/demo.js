@@ -390,7 +390,7 @@ function replaceLoadingWithResponse(data) {
   const badgeHtml = badgeText ? `<span class="result-badge ${status}">${esc(badgeText)}</span>` : "";
   bubble.innerHTML =
     badgeHtml +
-    `<div class="msg-text">${esc(data.result ?? "")}</div>` +
+    (status === "pending" ? "" : `<div class="msg-text">${esc(data.result ?? "")}</div>`) +
     actionsHtml;
 
   el.innerHTML = "";
