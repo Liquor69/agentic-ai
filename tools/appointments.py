@@ -41,13 +41,6 @@ MAX_SLOT_SUGGESTIONS = 4            # max available dates returned; note emitted
 
 CLOSED_WEEKDAY = 6                  # Sunday (0=Monday … 6=Sunday)
 
-SERVICES: dict[str, dict[str, Any]] = {
-    "initial_consultation": {"name": "Initial Consultation"},
-    "follow_up":            {"name": "Follow-up Session"},
-    "assessment":           {"name": "Assessment"},
-    "coaching":             {"name": "Coaching Session"},
-}
-
 # ─── FAQ knowledge base ───────────────────────────────────────────────────────
 
 _FAQ_CONTENT = """\
@@ -103,7 +96,6 @@ class AppointmentConfirmationPayload(BaseModel):
     summary: str
     fee_impact: str
     appointment_date: str | None = None
-    service: str | None = None
     old_date: str | None = None
     new_date: str | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
@@ -120,7 +112,6 @@ class AppointmentState(BaseModel):
     """
     client_id: str
     client_name: str
-    service_type: str | None = None     # key from SERVICES
     appointment_date: date | None = None
     status: str = "none"
     has_pending_action: bool = False
@@ -132,27 +123,27 @@ class AppointmentState(BaseModel):
 ARCHETYPES: list[dict[str, Any]] = [
     {
         "id": "client-reschedule-ok",
-        "label": "Sophie · Follow-up · early next week",
+        "label": "Sophie · early next week",
         "tags": ["Free reschedule", "24h+ notice"],
-        "description": "Has a session early next week. Rescheduling or cancelling is free of charge.",
+        "description": "Has an appointment early next week. Rescheduling or cancelling is free of charge.",
     },
     {
         "id": "client-cancel-sameday",
-        "label": "Marco · Assessment · Today",
+        "label": "Marco · Today",
         "tags": ["Same-day cancel", "€30 fee applies"],
         "description": "Appointment is today. A late cancellation fee of €30 applies.",
     },
     {
         "id": "client-new",
-        "label": "Amelia · New client · No booking",
+        "label": "Amelia · No booking",
         "tags": ["No appointment", "Ready to book"],
         "description": "New client with no existing appointment. Try booking a first session.",
     },
     {
         "id": "client-cancel-ok",
-        "label": "Thomas · Consultation · later this week",
+        "label": "Thomas · later this week",
         "tags": ["Free cancel", "24h+ notice"],
-        "description": "Consultation later this week. Can cancel or reschedule free of charge.",
+        "description": "Appointment later this week. Can cancel or reschedule free of charge.",
     },
 ]
 
@@ -174,7 +165,6 @@ def _build_mock_appointments() -> dict[str, dict[str, Any]]:
         "client-reschedule-ok": {
             "client_id": "client-reschedule-ok",
             "client_name": "Sophie Bernard",
-            "service_type": "follow_up",
             "appointment_date": _weekday_date(today, 3).isoformat(),
             "status": "scheduled",
             "has_pending_action": False,
@@ -182,7 +172,6 @@ def _build_mock_appointments() -> dict[str, dict[str, Any]]:
         "client-cancel-sameday": {
             "client_id": "client-cancel-sameday",
             "client_name": "Marco Rossi",
-            "service_type": "assessment",
             "appointment_date": today.isoformat(),
             "status": "scheduled",
             "has_pending_action": False,
@@ -190,7 +179,6 @@ def _build_mock_appointments() -> dict[str, dict[str, Any]]:
         "client-new": {
             "client_id": "client-new",
             "client_name": "Amelia Chen",
-            "service_type": None,
             "appointment_date": None,
             "status": "none",
             "has_pending_action": False,
@@ -198,7 +186,6 @@ def _build_mock_appointments() -> dict[str, dict[str, Any]]:
         "client-cancel-ok": {
             "client_id": "client-cancel-ok",
             "client_name": "Thomas Müller",
-            "service_type": "initial_consultation",
             "appointment_date": _weekday_date(today, 5).isoformat(),
             "status": "scheduled",
             "has_pending_action": False,
@@ -370,7 +357,6 @@ def describe_entity(client_id: str) -> str | None:
     if appt.status == "none":
         return f"Today: {today_str}. Client: {name}. No existing appointment."
     if appt.status == "scheduled" and appt.appointment_date:
-        svc = SERVICES.get(appt.service_type or "", {}).get("name", appt.service_type or "Appointment")
         delta = (appt.appointment_date - today).days
         when = (
             "today" if delta == 0
@@ -379,7 +365,7 @@ def describe_entity(client_id: str) -> str | None:
         )
         return (
             f"Today: {today_str}. Client: {name}. "
-            f"{svc} scheduled {when}. Status: active."
+            f"Appointment scheduled {when}. Status: active."
         )
     if appt.status == "no_show":
         return f"Today: {today_str}. Client: {name}. Missed appointment yesterday. Status: no-show."
@@ -736,7 +722,7 @@ def book_appointment(input: BookAppointmentInput) -> BookResult:
 
 @register_tool
 def reschedule_appointment(input: RescheduleAppointmentInput) -> RescheduleResult:
-    """Reschedule an existing appointment to a new date and time."""
+    """Reschedule an existing appointment to a new date."""
     client_id = input.account_id
 
     # ── Policy checks ────────────────────────────────────────────────────────
@@ -809,8 +795,7 @@ def reschedule_appointment(input: RescheduleAppointmentInput) -> RescheduleResul
     if old_date and old_date <= date.today():
         fee = RESCHEDULE_FEE
 
-    svc_name = SERVICES.get(appt.service_type or "", {}).get("name", "appointment")
-    old_date_str = old_date.strftime("%A, %d %B") if old_date else "current appointment"
+    old_date_str = old_date.strftime("%A, %d %B") if old_date else "your current appointment"
     new_date_str = new_date_obj.strftime("%A, %d %B")
     fee_text = f"€{fee:.0f} same-day rescheduling fee" if fee > 0 else "No fee"
 
@@ -818,7 +803,7 @@ def reschedule_appointment(input: RescheduleAppointmentInput) -> RescheduleResul
     if not input.confirmed:
         payload = AppointmentConfirmationPayload(
             action="reschedule_appointment",
-            summary=f"Move {svc_name} from {old_date_str} to {new_date_str}.",
+            summary=f"Move your appointment from {old_date_str} to {new_date_str}.",
             fee_impact=fee_text,
             old_date=old_date_str,
             new_date=new_date_str,
@@ -836,7 +821,6 @@ def reschedule_appointment(input: RescheduleAppointmentInput) -> RescheduleResul
     new_state = AppointmentState(
         client_id=client_id,
         client_name=appt.client_name,
-        service_type=appt.service_type,
         appointment_date=new_date_obj,
         status="scheduled",
         has_pending_action=False,
@@ -885,7 +869,6 @@ def cancel_appointment(input: CancelAppointmentInput) -> CancelResult:
         ))
 
     appt_date = appt.appointment_date
-    svc_name = SERVICES.get(appt.service_type or "", {}).get("name", "appointment")
 
     # Same-day cancellation incurs a fee
     fee = 0.0
@@ -894,7 +877,7 @@ def cancel_appointment(input: CancelAppointmentInput) -> CancelResult:
         fee = CANCELLATION_FEE
         fee_waived = False
 
-    appt_date_str = appt_date.strftime("%A, %d %B") if appt_date else "scheduled appointment"
+    appt_date_str = appt_date.strftime("%A, %d %B") if appt_date else "your scheduled appointment"
     fee_text = (
         f"€{fee:.0f} same-day cancellation fee"
         if fee > 0
@@ -905,10 +888,9 @@ def cancel_appointment(input: CancelAppointmentInput) -> CancelResult:
     if not input.confirmed:
         payload = AppointmentConfirmationPayload(
             action="cancel_appointment",
-            summary=f"Cancel {svc_name} on {appt_date_str}.",
+            summary=f"Cancel your appointment on {appt_date_str}.",
             fee_impact=fee_text,
             appointment_date=appt_date_str,
-            service=svc_name,
             raw={},
         )
         return CancelResult(
@@ -923,7 +905,6 @@ def cancel_appointment(input: CancelAppointmentInput) -> CancelResult:
     cancelled_state = AppointmentState(
         client_id=client_id,
         client_name=appt.client_name,
-        service_type=appt.service_type,
         appointment_date=appt_date,
         status="cancelled",
         has_pending_action=False,

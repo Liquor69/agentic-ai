@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date
 from functools import lru_cache
 from typing import Any, TypedDict
 
@@ -463,32 +464,35 @@ def _derive_verified_changes(tool_name: str, result: Any) -> list[str]:
             changes.append(f"Guest pass: {d['guest_pass_impact']}")
 
     elif tool_name == "book_appointment":
-        if d.get("appointment_date") and d.get("appointment_time"):
-            service = d.get("service_name", "Appointment")
-            changes.append(f"{service} booked for {d['appointment_date']} at {d['appointment_time']}")
-        price = d.get("price")
-        if price is not None:
-            changes.append(f"Session fee: €{price:.2f}")
+        pass  # BookResult.message carries the polite confirmation; facts left empty so formatter falls back to it.
 
     elif tool_name == "reschedule_appointment":
-        if d.get("old_date") and d.get("new_date"):
-            changes.append(
-                f"Appointment moved from {d['old_date']} {d.get('old_time', '')} "
-                f"to {d['new_date']} {d.get('new_time', '')}".strip()
-            )
+        old_iso = d.get("old_date")
+        new_iso = d.get("new_date")
+        if old_iso and new_iso:
+            try:
+                old_fmt = date.fromisoformat(old_iso).strftime("%A, %d %B").replace(" 0", " ")
+                new_fmt = date.fromisoformat(new_iso).strftime("%A, %d %B").replace(" 0", " ")
+            except (ValueError, TypeError):
+                old_fmt, new_fmt = old_iso, new_iso
+            changes.append(f"We've moved your appointment from {old_fmt} to {new_fmt}.")
         fee = d.get("reschedule_fee")
         if fee is not None and fee > 0:
-            changes.append(f"Rescheduling fee charged: €{fee:.2f}")
+            changes.append(f"Please note a same-day rescheduling fee of €{fee:.2f} applies.")
 
     elif tool_name == "cancel_appointment":
-        appt_date = d.get("appointment_date")
-        if appt_date:
-            changes.append(f"Appointment on {appt_date} cancelled")
+        appt_iso = d.get("appointment_date")
+        if appt_iso:
+            try:
+                appt_fmt = date.fromisoformat(appt_iso).strftime("%A, %d %B").replace(" 0", " ")
+            except (ValueError, TypeError):
+                appt_fmt = appt_iso
+            changes.append(f"Your appointment on {appt_fmt} has been cancelled.")
         fee = d.get("cancellation_fee")
         if fee is not None and fee > 0:
-            changes.append(f"Late cancellation fee: €{fee:.2f}")
+            changes.append(f"A same-day cancellation fee of €{fee:.2f} has been applied.")
         elif d.get("fee_waived") or fee == 0:
-            changes.append("No cancellation fee (sufficient notice given)")
+            changes.append("No cancellation fee — thank you for giving us enough notice.")
 
     return changes or (["Operation completed — no account state changes"] if d.get("success") else [])
 
@@ -1346,7 +1350,6 @@ _CONFIRMATION_LABELS: dict[str, str] = {
     "subscription_validity_impact": "Subscription",
     "fee_impact": "Fee",
     "appointment_date": "Appointment date",
-    "service": "Service",
     "old_date": "Current appointment",
     "new_date": "Rescheduled to",
     "reschedule_fee": "Rescheduling fee",
