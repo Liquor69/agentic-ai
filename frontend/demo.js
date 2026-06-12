@@ -507,19 +507,27 @@ const _SCHEDULING_CODES = new Set([
   "MAX_ADVANCE_BOOKING_EXCEEDED","PENDING_RESCHEDULE_ACTIVE",
 ]);
 
-function haltStatus(data) {
-  const h = data.halt_reason;
-  if (h === "confirmation_pending")                      return "pending";
-  if (h === "error" || h === "tool_failure") {
-    if (_SCHEDULING_CODES.has(data.error?.code))         return "info";
-    return "error";
-  }
-  if (h === "max_iterations" || data.error)              return "error";
-  if (h === "cancelled" || h === "confirmation_expired") return "error";
-  return "success";
+function _wasBooked(data) {
+  const exec = (data.trace ?? []).find(s => s.phase === "execution");
+  return (exec?.data?.results ?? []).some(
+    r => r.tool === "book_appointment" && r.status === "success"
+  );
 }
 
-const STATUS_BADGE = { success: "Done", error: "Error", pending: "Confirm action", info: "" };
+function haltStatus(data) {
+  const h = data.halt_reason;
+  if (h === "confirmation_pending")           return "pending";
+  if (h === "tool_failure" || h === "error") {
+    if (_SCHEDULING_CODES.has(data.error?.code)) return "neutral";
+    return "error";
+  }
+  if (h === "max_iterations")                return "error";
+  if (data.error && h !== "success")         return "error";
+  if (h === "success" && _wasBooked(data))   return "success";
+  return "neutral";
+}
+
+const STATUS_BADGE = { success: "Done", error: "Error", pending: "Confirm action" };
 
 
 // ── Audit trail (per message) ─────────────────────────────────────────────────
