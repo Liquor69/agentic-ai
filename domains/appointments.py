@@ -36,6 +36,7 @@ PACK: DomainPack = {
     ),
     "selection_rules": """\
 Tool selection rules (pick the FIRST matching rule — do not add extra tools):
+- Client confirms a date previously offered by the assistant ("That works", "Perfect", "Yes please", "Book it", "That one", "Sounds good", etc.) → book_appointment (extract the confirmed date from the prior assistant message in conversation history)
 - Client wants to book/schedule/make a new appointment AND gives a specific date → book_appointment
 - Client wants to book/schedule/make a new appointment WITHOUT a specific date   → check_availability
 - Client asks to reschedule, move, or change their appointment   → reschedule_appointment
@@ -45,6 +46,7 @@ Tool selection rules (pick the FIRST matching rule — do not add extra tools):
 - Entire request is GENUINELY UNCLEAR                           → clarify (solo)
 
 Critical disambiguation:
+- Short confirmations after an availability offer ("That works", "Perfect", "Yes", "Great", "Book it") → book_appointment with the date from the prior assistant message; NEVER re-run check_availability
 - "I'd like to make an appointment next week" → check_availability (date given as range, no specific day)
 - "I'd like to book for Monday" → book_appointment (specific date given)
 - "I'd like to book an appointment" (no date at all) → book_appointment (tool handles no-date case)
@@ -57,8 +59,8 @@ Multi-tool examples:
 - "Cancel my Thursday and book me for next Monday" → [cancel_appointment, book_appointment]
 - Single clear intent → one-element tools array
 
-Extractable parameters (extract only values explicitly stated — never invent):
-- book_appointment:        requested_date (YYYY-MM-DD)
+Extractable parameters (extract only values explicitly stated or inferable from conversation history — never invent):
+- book_appointment:        requested_date (YYYY-MM-DD) — when confirming from history, convert the date mentioned in the prior assistant message to YYYY-MM-DD
 - reschedule_appointment:  new_date (YYYY-MM-DD)
 - cancel_appointment:      (no extractable params — client_id comes from account context)
 - check_availability:      date_range_start (YYYY-MM-DD), date_range_end (YYYY-MM-DD)
