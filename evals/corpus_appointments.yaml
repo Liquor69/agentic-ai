@@ -1,0 +1,376 @@
+# evals/corpus_appointments.yaml
+#
+# Evaluation corpus for the Appointments domain.
+#
+# Each case defines:
+#   id                      - unique identifier
+#   message                 - natural language input
+#   account_id              - client fixture to use (omit for FAQ/availability-only cases)
+#   expected_tools          - list of tools the planner should select (routing accuracy)
+#   expected_halt_reason    - halt_reason after first call
+#   expected_policy_outcome - brief label for policy layer test
+#   mock_tool_input         - optional per-tool input overrides for mock mode (supports $TOKENS)
+#   notes                   - optional context / edge case description
+#
+# Mock mode: LLM is bypassed; expected_tools is injected directly.
+#   Tests: halt_reason + policy_outcome correctness.
+#
+# Live mode: real LLM is used; routing accuracy measured against expected_tools.
+#   Tests: routing accuracy + halt_reason + policy_outcome.
+#   Requires: DOMAIN_PACK=appointments in environment.
+#
+# Date tokens (replaced at runtime by the harness):
+#   $FIRST_AVAILABLE  — next genuinely open booking date (skips booked/Sunday days)
+#   $NEXT_SUNDAY      — next Sunday (CLOSED_DAY test)
+#   $YESTERDAY        — yesterday (DATE_IN_PAST test)
+#   $IN_90_DAYS       — 90 days from today (MAX_ADVANCE_BOOKING_EXCEEDED test; limit=60)
+#   $NEXT_MONDAY … $NEXT_SATURDAY — next occurrence of each weekday
+#
+# Client fixtures:
+#   client-reschedule-ok   Sophie Bernard  — scheduled 3+ days out; free reschedule/cancel
+#   client-cancel-sameday  Marco Rossi     — scheduled today; €30 cancel / €15 reschedule fee
+#   client-new             Amelia Chen     — no appointment; ready to book
+#   client-cancel-ok       Thomas Müller   — scheduled 5+ days out; free cancel/reschedule
+#
+# Policy outcome labels:
+#   answered               — read tool succeeded (FAQ, availability, booking without date)
+#   eligible               — action tool reached confirmation_pending
+#   blocked_duplicate      — DUPLICATE_BOOKING (already has a scheduled appointment)
+#   blocked_no_appointment — NO_ACTIVE_APPOINTMENT (nothing to reschedule/cancel)
+#   blocked_closed_day     — CLOSED_DAY (Sunday)
+#   blocked_date_in_past   — DATE_IN_PAST
+#   blocked_advance_limit  — MAX_ADVANCE_BOOKING_EXCEEDED (>60 days out)
+#   clarification_requested — agent asked a clarifying question
+
+cases:
+
+# ─── appointment_faq (7 cases) ────────────────────────────────────────────────
+
+  - id: faq_cancellation_policy
+    message: "What's your cancellation policy?"
+    expected_tools: [appointment_faq]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Direct policy question → appointment_faq; not cancel_appointment
+
+  - id: faq_reschedule_fee
+    message: "Is there a fee if I need to reschedule my appointment?"
+    expected_tools: [appointment_faq]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Rescheduling fee question → appointment_faq; not reschedule_appointment
+
+  - id: faq_opening_hours
+    message: "When are you open?"
+    expected_tools: [appointment_faq]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Operating hours question
+
+  - id: faq_advance_booking
+    message: "How far in advance can I book an appointment?"
+    expected_tools: [appointment_faq]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Booking rules / advance limit question
+
+  - id: faq_payment_methods
+    message: "How do I pay for my session?"
+    expected_tools: [appointment_faq]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Payment information question
+
+  - id: faq_services_offered
+    message: "What services do you offer?"
+    expected_tools: [appointment_faq]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Services/offerings question → appointment_faq; not a booking intent
+
+  - id: faq_same_day_cancel_amount
+    message: "How much is the same-day cancellation fee?"
+    expected_tools: [appointment_faq]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Fee amount query → answered from FAQ knowledge base, not cancel_appointment
+
+
+# ─── check_availability (5 cases) ────────────────────────────────────────────
+
+  - id: avail_no_date
+    message: "What dates do you have available?"
+    expected_tools: [check_availability]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Open availability query — no date range; tool returns next available days
+
+  - id: avail_next_week
+    message: "Do you have anything available next week?"
+    expected_tools: [check_availability]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Range query — next week; client gives range, not a specific date
+
+  - id: avail_specific_day
+    message: "Is next Thursday free?"
+    expected_tools: [check_availability]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Single-day availability check
+
+  - id: avail_this_week
+    message: "What's available this week?"
+    expected_tools: [check_availability]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: This-week range query
+
+  - id: avail_next_month
+    message: "What slots do you have open next month?"
+    expected_tools: [check_availability]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Month-range availability query
+
+
+# ─── book_appointment (6 cases) ───────────────────────────────────────────────
+
+  - id: book_no_date
+    message: "I'd like to book an appointment"
+    account_id: client-new
+    expected_tools: [book_appointment]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: No date given — tool returns available slots list (success, not confirmation_pending)
+
+  - id: book_new_client
+    message: "Can I book an appointment for next Monday?"
+    account_id: client-new
+    expected_tools: [book_appointment]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    mock_tool_input:
+      book_appointment:
+        requested_date: "$FIRST_AVAILABLE"
+    notes: New client + specific available date → confirmation required
+
+  - id: book_duplicate
+    message: "I'd like to book for next week"
+    account_id: client-reschedule-ok
+    expected_tools: [book_appointment]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_duplicate
+    mock_tool_input:
+      book_appointment:
+        requested_date: "$FIRST_AVAILABLE"
+    notes: Sophie already has a scheduled appointment → DUPLICATE_BOOKING
+
+  - id: book_closed_day
+    message: "Can I book in for this Sunday?"
+    account_id: client-new
+    expected_tools: [book_appointment]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_closed_day
+    mock_tool_input:
+      book_appointment:
+        requested_date: "$NEXT_SUNDAY"
+    notes: Sunday is closed → CLOSED_DAY
+
+  - id: book_date_in_past
+    message: "Can I book for yesterday?"
+    account_id: client-new
+    expected_tools: [book_appointment]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_date_in_past
+    mock_tool_input:
+      book_appointment:
+        requested_date: "$YESTERDAY"
+    notes: Past date → DATE_IN_PAST
+
+  - id: book_too_far_advance
+    message: "I'd like to book an appointment about 3 months from now"
+    account_id: client-new
+    expected_tools: [book_appointment]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_advance_limit
+    mock_tool_input:
+      book_appointment:
+        requested_date: "$IN_90_DAYS"
+    notes: 90 days > 60-day limit → MAX_ADVANCE_BOOKING_EXCEEDED
+
+
+# ─── reschedule_appointment (5 cases) ────────────────────────────────────────
+
+  - id: reschedule_free
+    message: "Can I move my appointment to next Monday?"
+    account_id: client-reschedule-ok
+    expected_tools: [reschedule_appointment]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    mock_tool_input:
+      reschedule_appointment:
+        new_date: "$FIRST_AVAILABLE"
+    notes: Sophie — appointment 3+ days out; free reschedule, confirmation required
+
+  - id: reschedule_with_fee
+    message: "I need to change my appointment — can I move it to next week?"
+    account_id: client-cancel-sameday
+    expected_tools: [reschedule_appointment]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    mock_tool_input:
+      reschedule_appointment:
+        new_date: "$FIRST_AVAILABLE"
+    notes: Marco — appointment is today; €15 same-day fee applies, confirmation required
+
+  - id: reschedule_no_appointment
+    message: "I'd like to reschedule my appointment"
+    account_id: client-new
+    expected_tools: [reschedule_appointment]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_no_appointment
+    mock_tool_input:
+      reschedule_appointment:
+        new_date: "$FIRST_AVAILABLE"
+    notes: No active appointment → NO_ACTIVE_APPOINTMENT
+
+  - id: reschedule_closed_day
+    message: "Move my appointment to Sunday please"
+    account_id: client-reschedule-ok
+    expected_tools: [reschedule_appointment]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_closed_day
+    mock_tool_input:
+      reschedule_appointment:
+        new_date: "$NEXT_SUNDAY"
+    notes: Sunday is closed → CLOSED_DAY
+
+  - id: reschedule_past_date
+    message: "Can I reschedule to last week?"
+    account_id: client-reschedule-ok
+    expected_tools: [reschedule_appointment]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_date_in_past
+    mock_tool_input:
+      reschedule_appointment:
+        new_date: "$YESTERDAY"
+    notes: Past date → DATE_IN_PAST
+
+
+# ─── cancel_appointment (4 cases) ────────────────────────────────────────────
+
+  - id: cancel_free
+    message: "Please cancel my appointment"
+    account_id: client-cancel-ok
+    expected_tools: [cancel_appointment]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: Thomas — 5+ days out; no cancellation fee, confirmation required
+
+  - id: cancel_with_fee
+    message: "I need to cancel my appointment today"
+    account_id: client-cancel-sameday
+    expected_tools: [cancel_appointment]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: Marco — appointment is today; €30 same-day fee applies, confirmation required
+
+  - id: cancel_no_appointment
+    message: "Cancel my appointment"
+    account_id: client-new
+    expected_tools: [cancel_appointment]
+    expected_halt_reason: tool_failure
+    expected_policy_outcome: blocked_no_appointment
+    notes: No active appointment → NO_ACTIVE_APPOINTMENT
+
+  - id: cancel_notice_period
+    message: "I'd like to cancel please"
+    account_id: client-reschedule-ok
+    expected_tools: [cancel_appointment]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: Sophie — 3+ days out; free cancellation, confirmation required
+
+
+# ─── multi-tool (1 case) ──────────────────────────────────────────────────────
+
+  - id: multi_cancel_and_rebook
+    message: "Please cancel my appointment and book me for next Monday instead"
+    account_id: client-cancel-ok
+    expected_tools: [cancel_appointment, book_appointment]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    mock_tool_input:
+      book_appointment:
+        requested_date: "$FIRST_AVAILABLE"
+    notes: Two-action request; cancel_appointment executes first and halts for confirmation
+
+
+# ─── disambiguation (8 cases) ────────────────────────────────────────────────
+
+  - id: disambig_range_not_specific
+    message: "I'd like to make an appointment next week"
+    expected_tools: [check_availability]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Range with no specific date → check_availability; a specific date like "book for Monday" → book_appointment
+
+  - id: disambig_specific_date_to_book
+    message: "I'd like to book for next Monday please"
+    account_id: client-new
+    expected_tools: [book_appointment]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    mock_tool_input:
+      book_appointment:
+        requested_date: "$FIRST_AVAILABLE"
+    notes: Specific date given → book_appointment, not check_availability
+
+  - id: disambig_reschedule_not_cancel
+    message: "Can I move my appointment to Wednesday?"
+    account_id: client-reschedule-ok
+    expected_tools: [reschedule_appointment]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    mock_tool_input:
+      reschedule_appointment:
+        new_date: "$FIRST_AVAILABLE"
+    notes: Move / change / shift → reschedule_appointment, not cancel_appointment
+
+  - id: disambig_policy_not_cancel
+    message: "What is your cancellation policy?"
+    expected_tools: [appointment_faq]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Policy question → appointment_faq; never routes to cancel_appointment
+
+  - id: disambig_availability_not_book
+    message: "Is Tuesday available?"
+    expected_tools: [check_availability]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Availability query → check_availability, not book_appointment
+
+  - id: disambig_cancel_clear_intent
+    message: "I need to cancel my booking"
+    account_id: client-cancel-ok
+    expected_tools: [cancel_appointment]
+    expected_halt_reason: confirmation_pending
+    expected_policy_outcome: eligible
+    notes: Unambiguous cancel intent → cancel_appointment
+
+  - id: disambig_short_confirm_after_offer
+    message: "That works for me"
+    account_id: client-new
+    expected_tools: [book_appointment]
+    expected_halt_reason: success
+    expected_policy_outcome: answered
+    notes: Short confirmation → book_appointment; mock has no prior context so no date → shows slots (success/answered)
+
+  - id: disambig_unclear_request
+    message: "I need some help with something"
+    expected_tools: [clarify]
+    expected_halt_reason: ambiguity
+    expected_policy_outcome: clarification_requested
+    notes: Genuinely unclear request → clarify
