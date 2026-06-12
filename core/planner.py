@@ -134,13 +134,14 @@ and justification. Do NOT include account_id, session_id, or confirmed in any to
 """
 
 
-def _build_prompts() -> tuple[str, str]:
+@lru_cache(maxsize=8)
+def _get_prompts_for_domain(domain: str) -> tuple[str, str]:
     """
-    Build (classification_system, selection_system_base) from the active domain pack.
-    Called once at module import time; results cached as module-level constants.
+    Build (classification_system, selection_system_base) for a specific domain. Cached per domain.
+    Using state['domain'] per request allows a single server to serve multiple domain tabs correctly.
     """
     from domains import load_domain_pack
-    pack = load_domain_pack(settings.domain_pack)
+    pack = load_domain_pack(domain)
     classification = _CLASSIFICATION_SYSTEM_TEMPLATE.format(
         context=pack["classification_context"]
     )
@@ -154,7 +155,8 @@ def _build_prompts() -> tuple[str, str]:
     return classification, selection
 
 
-_CLASSIFICATION_SYSTEM, _SELECTION_SYSTEM_BASE = _build_prompts()
+# Module-level constants for backward compat (test_domains.py imports these directly)
+_CLASSIFICATION_SYSTEM, _SELECTION_SYSTEM_BASE = _get_prompts_for_domain(settings.domain_pack)
 
 _EXECUTE_PLAN_SCHEMA: dict[str, Any] = {
     "name": "execute_plan",
@@ -327,13 +329,17 @@ def _trace(state: AgentState, phase: str, data: dict) -> list[dict]:
 
 @lru_cache(maxsize=1)
 def _get_selection_system() -> str:
-    """
-    Build the selection system prompt once, embedding only tool names and descriptions.
-    Cached for the process lifetime.
-    """
+    """Backward-compat: selection system for the default domain_pack."""
+    return _get_selection_system_for_domain(settings.domain_pack)
+
+
+@lru_cache(maxsize=8)
+def _get_selection_system_for_domain(domain: str) -> str:
+    """Build the selection system prompt for a specific domain. Cached per domain."""
+    _, selection_base = _get_prompts_for_domain(domain)
     tools = get_tool_names_and_descriptions()
     tool_list = "\n".join(f"- {t['name']}: {t['description']}" for t in tools)
-    return f"{_SELECTION_SYSTEM_BASE}\n\nRegistered tools:\n{tool_list}"
+    return f"{selection_base}\n\nRegistered tools:\n{tool_list}"
 
 
 def _check_missing_params(tool_name: str, tool_input: dict) -> list[str]:
@@ -379,12 +385,13 @@ def _describe_entity(entity_id: str, domain: str) -> str | None:
     return f"entity_id={entity_id}"
 
 
-def _classify_intent(input_text: str, account_context: str | None) -> str:
+def _classify_intent(input_text: str, account_context: str | None, domain: str | None = None) -> str:
     """Fast LLM call: classify the request as a short descriptive phrase."""
+    classification_system = _get_prompts_for_domain(domain or settings.domain_pack)[0]
     context_prefix = f"Account: {account_context}\n\n" if account_context else ""
     resp = llm_call(
         messages=[{"role": "user", "content": f"{context_prefix}Request: {input_text}"}],
-        system=_CLASSIFICATION_SYSTEM,
+        system=classification_system,
         model_tier="fast",
     )
     return resp.get("content", "").strip() or input_text[:80]
@@ -534,9 +541,9 @@ def interpretation_node(state: AgentState) -> dict:
     confirmed = state.get("confirmed")
 
     account_id = state.get("account_id")
+    domain_name = state.get("domain") or settings.domain_pack
     account_context: str | None = None
     if account_id:
-        domain_name = state.get("domain") or settings.domain_pack
         account_context = _describe_entity(account_id, domain_name)
 
     updates: dict[str, Any] = {
@@ -630,7 +637,7 @@ def interpretation_node(state: AgentState) -> dict:
                 updates["classification"] = "Cancelled pending action"
 
     if confirmed is None:
-        classification = _classify_intent(state["input"], account_context)
+        classification = _classify_intent(state["input"], account_context, domain=domain_name)
         updates["classification"] = classification
 
     updates["trace"] = _trace(state, "interpretation", {
@@ -676,9 +683,10 @@ def selection_node(state: AgentState) -> dict:
         user_content = f"[Active account: {state['account_context']}]\n\n{user_content}"
     messages.append({"role": "user", "content": user_content})
 
+    _domain_name = state.get("domain") or settings.domain_pack
     response = llm_call(
         messages=messages,
-        system=_get_selection_system(),
+        system=_get_selection_system_for_domain(_domain_name),
         tools=[_EXECUTE_PLAN_SCHEMA],
         model_tier="fast",
         force_tool="execute_plan",

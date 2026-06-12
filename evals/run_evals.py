@@ -102,6 +102,8 @@ def _setup_domain(domain: str = "customer_ops") -> None:
     try:
         import core.planner as _p
         _p._get_selection_system.cache_clear()
+        _p._get_selection_system_for_domain.cache_clear()
+        _p._get_prompts_for_domain.cache_clear()
         _p.build_graph.cache_clear()
     except Exception:
         pass

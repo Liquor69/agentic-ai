@@ -36,6 +36,7 @@ PACK: DomainPack = {
     ),
     "selection_rules": """\
 Tool selection rules (pick the FIRST matching rule — do not add extra tools):
+- Client names a specific day from offered options ("Monday works", "Thursday is fine", "I'll take Tuesday", "Let's do Friday", "Wednesday please") → book_appointment; find that weekday in the prior assistant message and extract its full date as YYYY-MM-DD
 - Client confirms a date previously offered by the assistant ("That works", "Perfect", "Yes please", "Book it", "That one", "Sounds good", etc.) → book_appointment (extract the confirmed date from the prior assistant message in conversation history)
 - Client wants to book/schedule/make a new appointment AND gives a specific date → book_appointment
 - Client wants to book/schedule/make a new appointment WITHOUT a specific date   → check_availability
@@ -60,7 +61,7 @@ Multi-tool examples:
 - Single clear intent → one-element tools array
 
 Extractable parameters (extract only values explicitly stated or inferable from conversation history — never invent):
-- book_appointment:        requested_date (YYYY-MM-DD) — when confirming from history, convert the date mentioned in the prior assistant message to YYYY-MM-DD
+- book_appointment:        requested_date (YYYY-MM-DD) — when client names a weekday ("Monday works", "I'll take Thursday"), look up that weekday name in the prior assistant message (e.g. "Monday 22 June") and emit its full date as YYYY-MM-DD; when client says a generic "that works" / "yes", use the first date offered in the prior assistant message
 - reschedule_appointment:  new_date (YYYY-MM-DD)
 - cancel_appointment:      (no extractable params — client_id comes from account context)
 - check_availability:      date_range_start (YYYY-MM-DD), date_range_end (YYYY-MM-DD)
