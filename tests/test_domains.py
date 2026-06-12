@@ -228,23 +228,32 @@ class TestITHelpdeskTools:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestPlannerPromptsDomainDriven:
-    def test_classification_system_contains_domain_context(self):
-        """The planner's classification prompt contains the customer_ops context."""
+    def test_classification_system_matches_active_domain(self):
+        """Module-level _CLASSIFICATION_SYSTEM reflects the active domain_pack setting."""
         from core.planner import _CLASSIFICATION_SYSTEM
         from domains import load_domain_pack
-        pack = load_domain_pack("customer_ops")
-        # The classification context keyword should appear somewhere in the prompt
+        from config import settings
+        pack = load_domain_pack(settings.domain_pack)
         assert any(
             word in _CLASSIFICATION_SYSTEM
             for word in pack["classification_context"].split()[:5]
         )
 
-    def test_selection_system_contains_customer_ops_rules(self):
-        """The planner's selection prompt contains customer_ops-specific routing rules."""
-        from core.planner import _SELECTION_SYSTEM_BASE
-        assert "process_refund" in _SELECTION_SYSTEM_BASE
-        assert "cancel_subscription" in _SELECTION_SYSTEM_BASE
-        assert "pause_subscription" in _SELECTION_SYSTEM_BASE
+    def test_get_prompts_for_domain_customer_ops_contains_customer_ops_rules(self):
+        """_get_prompts_for_domain('customer_ops') selection base contains customer_ops tools."""
+        from core.planner import _get_prompts_for_domain
+        _, sel_base = _get_prompts_for_domain("customer_ops")
+        assert "process_refund" in sel_base
+        assert "cancel_subscription" in sel_base
+        assert "pause_subscription" in sel_base
+
+    def test_get_prompts_for_domain_appointments_contains_appointment_rules(self):
+        """_get_prompts_for_domain('appointments') selection base contains appointment tools."""
+        from core.planner import _get_prompts_for_domain
+        _, sel_base = _get_prompts_for_domain("appointments")
+        assert "book_appointment" in sel_base
+        assert "reschedule_appointment" in sel_base
+        assert "cancel_appointment" in sel_base
 
     def test_selection_system_contains_generic_critical_rules(self):
         """Generic CRITICAL RULES preamble is always present regardless of domain."""
@@ -252,20 +261,18 @@ class TestPlannerPromptsDomainDriven:
         assert "CRITICAL RULES" in _SELECTION_SYSTEM_BASE
         assert "clarify" in _SELECTION_SYSTEM_BASE
 
-    def test_build_prompts_with_it_helpdesk_returns_different_rules(self):
-        """Building prompts for it_helpdesk yields IT-specific routing rules."""
-        from core.planner import _build_prompts
-        cls_sys, sel_sys = _build_prompts.__wrapped__() if hasattr(_build_prompts, "__wrapped__") else _build_prompts()
-        # We need to call with the it_helpdesk domain pack directly
-        from domains import load_domain_pack
-        from core.planner import (
-            _CLASSIFICATION_SYSTEM_TEMPLATE,
-            _SELECTION_SYSTEM_PREAMBLE,
-            _SELECTION_SYSTEM_SUFFIX,
-        )
-        pack = load_domain_pack("it_helpdesk")
-        cls_sys = _CLASSIFICATION_SYSTEM_TEMPLATE.format(context=pack["classification_context"])
-        sel_sys = _SELECTION_SYSTEM_PREAMBLE + "\n\n" + pack["selection_rules"] + "\n\n" + _SELECTION_SYSTEM_SUFFIX
-        assert "check_ticket_status" in sel_sys
-        assert "reset_password" in sel_sys
-        assert "process_refund" not in sel_sys
+    def test_get_prompts_for_domain_returns_different_prompts_per_domain(self):
+        """Each domain produces distinct classification and selection prompts."""
+        from core.planner import _get_prompts_for_domain
+        cls_ops, sel_ops = _get_prompts_for_domain("customer_ops")
+        cls_apt, sel_apt = _get_prompts_for_domain("appointments")
+        assert cls_ops != cls_apt
+        assert sel_ops != sel_apt
+
+    def test_get_prompts_for_domain_it_helpdesk_contains_it_rules(self):
+        """_get_prompts_for_domain('it_helpdesk') selection base contains IT tools."""
+        from core.planner import _get_prompts_for_domain
+        _, sel_base = _get_prompts_for_domain("it_helpdesk")
+        assert "check_ticket_status" in sel_base
+        assert "reset_password" in sel_base
+        assert "process_refund" not in sel_base

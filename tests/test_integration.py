@@ -110,9 +110,10 @@ class TestInfrastructure:
         assert data["status"] == "ok"
         assert data["db"] == "ok"
 
-    def test_health_domain_is_customer_ops(self, client):
+    def test_health_domain_matches_settings(self, client):
+        from config import settings
         data = client.get("/health").json()
-        assert data["domain"] == "customer_ops"
+        assert data["domain"] == settings.domain_pack
 
     def test_health_tools_registered_positive(self, client):
         data = client.get("/health").json()
