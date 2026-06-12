@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Appointment Assistant — AI Operations Agent</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -200,6 +200,23 @@
       .value-grid, .pricing-grid { gap: 16px; }
       .cta-row { flex-direction: column; align-items: stretch; }
       .cta-row .btn { text-align: center; }
+      body { padding-bottom: 76px; }
+    }
+
+    /* Sticky mobile CTA bar */
+    .mobile-cta { display: none; }
+    @media (max-width: 640px) {
+      .mobile-cta {
+        display: block;
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        background: var(--bg);
+        border-top: 1px solid var(--border);
+        padding: 12px 24px max(16px, env(safe-area-inset-bottom));
+        z-index: 100;
+        box-shadow: 0 -2px 12px rgba(0,0,0,.06);
+      }
+      .mobile-cta .btn { display: block; text-align: center; }
     }
   </style>
 </head>
@@ -332,6 +349,12 @@
 
 <!-- ── Footer ───────────────────────────────────────────────────── -->
 <footer class="site-footer"></footer>
+
+<!-- ── Mobile sticky CTA bar ────────────────────────────────────── -->
+<div class="mobile-cta">
+  <a href="mailto:liquor.busy@gmail.com?subject=Custom demo for my business — €150"
+     class="btn btn-primary">Get a demo built for my business — €150</a>
+</div>
 
 </body>
 </html>

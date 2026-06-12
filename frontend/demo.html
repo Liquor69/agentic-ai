@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Appointment Assistant — Live Demo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -296,7 +296,7 @@
       background: var(--bg);
       border-top: 1px solid var(--border);
       z-index: 100;
-      padding: 14px 0 20px;
+      padding: 14px 0 max(20px, env(safe-area-inset-bottom));
     }
 
     .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
