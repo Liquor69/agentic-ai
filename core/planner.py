@@ -1371,15 +1371,18 @@ _CONFIRMATION_SKIP = frozenset({"action", "summary", "raw"})
 def _fmt_confirmation(state: AgentState) -> str:
     p = state.get("confirmation_payload") or {}
     summary = p.get("summary", "Please confirm the following action.")
-    lines: list[str] = ["Action pending confirmation:", "", summary, ""]
+    lines: list[str] = [summary]
+    details: list[str] = []
     for key, val in p.items():
         if key.startswith("_") or key in _CONFIRMATION_SKIP:
             continue
         if val is None or val == "N/A" or val == "":
             continue
         label = _CONFIRMATION_LABELS.get(key, key.replace("_", " ").title())
-        lines.append(f"  {label}: {val}")
-    lines.extend(["", "Reply YES to authorise or NO to cancel."])
+        details.append(f"  {label}: {val}")
+    if details:
+        lines.append("")
+        lines.extend(details)
     return "\n".join(lines)
 
 

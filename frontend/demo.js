@@ -390,7 +390,7 @@ function replaceLoadingWithResponse(data) {
   const badgeHtml = badgeText ? `<span class="result-badge ${status}">${esc(badgeText)}</span>` : "";
   bubble.innerHTML =
     badgeHtml +
-    (status === "pending" ? "" : `<div class="msg-text">${esc(data.result ?? "")}</div>`) +
+    `<div class="msg-text">${esc(data.result ?? "")}</div>` +
     actionsHtml;
 
   el.innerHTML = "";
@@ -510,7 +510,7 @@ const _SCHEDULING_CODES = new Set([
 function _wasBooked(data) {
   const exec = (data.trace ?? []).find(s => s.phase === "execution");
   return (exec?.data?.results ?? []).some(
-    r => r.tool === "book_appointment" && r.status === "success"
+    r => (r.tool === "book_appointment" || r.tool === "reschedule_appointment") && r.status === "success"
   );
 }
 
