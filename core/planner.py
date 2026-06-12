@@ -1272,7 +1272,7 @@ def _fmt_tool_result(tool_name: str, r: dict, user_input: str) -> str | None:
     if tool_name in _ACTION_TOOLS:
         facts = [c for c in verified if not c.startswith("Awaiting") and not c.startswith("No system") and not c.startswith("Operation completed")]
         if facts:
-            return ". ".join(facts) + "."
+            return ". ".join(f.rstrip(".") for f in facts) + "."
         return answer if answer else None
 
     if result is None:
@@ -1317,7 +1317,7 @@ def _fmt_success(state: AgentState) -> str:
         if tool_name in _ACTION_TOOLS:
             facts = [c for c in verified if not c.startswith("Awaiting") and not c.startswith("No system") and not c.startswith("Operation completed")]
             if facts:
-                return ". ".join(facts) + "."
+                return ". ".join(f.rstrip(".") for f in facts) + "."
             # No real state change — return pre-formed message if present
             return answer if answer else "Request processed."
 
